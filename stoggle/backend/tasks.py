@@ -305,7 +305,8 @@ def update_relation_graphs(self):
             data = compute_relations(ticker)
             results[ticker] = len(data.get("nodes", []))
         except Exception as e:
-            logger.warning(f"관계도 갱신 실패 ({ticker}): {e}")
+            logger.error("[%s] 관계도 갱신 실패: %s", ticker, e)
+            self.retry(exc=e)
 
     return {"status": "ok", "updated": results}
 
