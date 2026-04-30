@@ -6,11 +6,8 @@ Celery 자동화 스케줄러
   celery -A tasks beat --loglevel=info
 """
 import os
-import re
 import logging
 import asyncio
-from datetime import datetime
-from html import unescape
 
 from celery import Celery
 from celery.schedules import crontab
@@ -26,12 +23,7 @@ app = Celery("stoggle", broker=REDIS_URL, backend=REDIS_URL)
 
 app.conf.timezone = "Asia/Seoul"
 app.conf.beat_schedule = {
-    # 매시간 정시 — 정치·사회·경제 뉴스 수집
-    "fetch-category-news-hourly": {
-        "task": "tasks.fetch_and_store_category_news",
-        "schedule": crontab(minute=0),
-    },
-    # 매일 오전 8시 30분 — 주요 종목 뉴스 사전 수집
+    # 매일 오전 8:30 — 주요 종목 뉴스 사전 수집
     "prefetch-news-daily": {
         "task": "tasks.prefetch_news_for_major_stocks",
         "schedule": crontab(hour=8, minute=30),
@@ -52,62 +44,6 @@ MAJOR_TICKERS = [
     "005930", "000660", "035420", "051910",
     "207940", "035720", "066570", "005380", "000270",
 ]
-
-_HTML_TAG_RE = re.compile(r"<[^>]+>")
-
-
-def _clean(text: str) -> str:
-    """Naver API 응답의 HTML 태그 및 엔티티 제거"""
-    return unescape(_HTML_TAG_RE.sub("", text)).strip()
-
-
-@app.task(bind=True, max_retries=3, default_retry_delay=60)
-def fetch_and_store_category_news(self):
-    """정치·사회·경제 뉴스를 1시간 주기로 수집해 news_cache에 저장"""
-    from agents.naver_news_crawler import fetch_all_news
-    from models.db_models import SessionLocal, NewsCache
-
-    try:
-        items = asyncio.run(fetch_all_news())
-    except Exception as e:
-        logger.error("뉴스 수집 실패: %s", e)
-        raise self.retry(exc=e)
-
-    db = SessionLocal()
-    try:
-        existing_urls = {row[0] for row in db.query(NewsCache.url).all()}
-
-        new_rows = []
-        for item in items:
-            url = item.get("link", "")
-            if not url or url in existing_urls:
-                continue
-            new_rows.append(NewsCache(
-                ticker="",
-                title=_clean(item.get("title", "")),
-                source=item.get("originallink", ""),
-                published_at=item.get("pubDate", ""),
-                url=url,
-                sentiment="neutral",
-                summary="",
-                category=item.get("category", ""),
-                fetched_at=datetime.utcnow(),
-            ))
-            existing_urls.add(url)
-
-        if new_rows:
-            db.bulk_save_objects(new_rows)
-            db.commit()
-
-        logger.info("카테고리 뉴스 저장 완료: %d건 신규 / %d건 수집", len(new_rows), len(items))
-        return {"saved": len(new_rows), "total_fetched": len(items)}
-
-    except Exception as e:
-        db.rollback()
-        logger.error("DB 저장 실패: %s", e)
-        raise self.retry(exc=e)
-    finally:
-        db.close()
 
 
 @app.task(bind=True, max_retries=3, default_retry_delay=60)
