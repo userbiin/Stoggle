@@ -28,6 +28,39 @@ from services.cache_service import (
     get_history_cache, set_history_cache,
 )
 
+FALLBACK_COMPANY_NAMES = {
+    "005930": "삼성전자",
+    "000660": "SK하이닉스",
+    "035420": "NAVER",
+    "051910": "LG화학",
+    "207940": "삼성바이오로직스",
+    "035720": "카카오",
+    "066570": "LG전자",
+    "005380": "현대차",
+    "000270": "기아",
+    "068270": "셀트리온",
+    "028260": "삼성물산",
+    "105560": "KB금융",
+    "055550": "신한지주",
+    "032830": "삼성생명",
+    "003550": "LG",
+    "259960": "크래프톤",
+    "012330": "현대모비스",
+    "015760": "한국전력",
+    "030200": "KT",
+    "096770": "SK이노베이션",
+    "017670": "SK텔레콤",
+    "034730": "SK",
+    "009150": "삼성전기",
+    "010950": "S-Oil",
+    "000810": "삼성화재",
+    "011200": "HMM",
+    "034020": "두산에너빌리티",
+    "033780": "KT&G",
+    "003490": "대한항공",
+    "316140": "우리금융지주",
+}
+
 
 def _today() -> str:
     return datetime.today().strftime("%Y%m%d")
@@ -35,6 +68,119 @@ def _today() -> str:
 
 def _n_days_ago(n: int) -> str:
     return (datetime.today() - timedelta(days=n)).strftime("%Y%m%d")
+
+
+def _normalize_ticker(value) -> Optional[str]:
+    """pykrx/pandas 반환값에서 6자리 종목코드 문자열을 안전하게 추출."""
+    if value is None:
+        return None
+
+    if isinstance(value, (pd.Series, pd.Index)):
+        for item in value.tolist():
+            ticker = _normalize_ticker(item)
+            if ticker:
+                return ticker
+        return None
+
+    if isinstance(value, pd.DataFrame):
+        tickers = _normalize_ticker_list(value)
+        return tickers[0] if tickers else None
+
+    text = str(value).strip()
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+    if text.isdigit():
+        return text.zfill(6)
+    return text if text else None
+
+
+def _normalize_ticker_list(raw) -> list[str]:
+    """list/Index/DataFrame 등 pykrx 반환 형태를 종목코드 리스트로 정규화."""
+    if raw is None:
+        return []
+
+    if isinstance(raw, pd.DataFrame):
+        candidate_columns = [
+            "티커", "ticker", "Ticker", "종목코드", "단축코드", "stock_code", "code",
+        ]
+        for col in candidate_columns:
+            if col in raw.columns:
+                return [
+                    ticker for ticker in (_normalize_ticker(v) for v in raw[col].tolist())
+                    if ticker
+                ]
+
+        if raw.index is not None and len(raw.index) > 0:
+            index_tickers = [
+                ticker for ticker in (_normalize_ticker(v) for v in raw.index.tolist())
+                if ticker
+            ]
+            if index_tickers:
+                return index_tickers
+
+        flattened = raw.to_numpy().ravel().tolist()
+        return [
+            ticker for ticker in (_normalize_ticker(v) for v in flattened)
+            if ticker
+        ]
+
+    if isinstance(raw, (pd.Series, pd.Index)):
+        raw = raw.tolist()
+
+    try:
+        iterator = list(raw)
+    except TypeError:
+        iterator = [raw]
+
+    return [
+        ticker for ticker in (_normalize_ticker(v) for v in iterator)
+        if ticker
+    ]
+
+
+def _coerce_company_name(value, ticker: str) -> str:
+    """종목명 반환값이 DataFrame/Series여도 검색 가능한 문자열로 보정."""
+    fallback = FALLBACK_COMPANY_NAMES.get(ticker, ticker)
+
+    if value is None:
+        return fallback
+
+    if isinstance(value, str):
+        return value.strip() or fallback
+
+    if isinstance(value, pd.Series):
+        for item in value.tolist():
+            name = _coerce_company_name(item, ticker)
+            if name != ticker:
+                return name
+        return fallback
+
+    if isinstance(value, pd.DataFrame):
+        candidate_columns = ["종목명", "한글명", "name", "Name", "회사명"]
+        for col in candidate_columns:
+            if col in value.columns and not value[col].empty:
+                return _coerce_company_name(value[col].iloc[0], ticker)
+        if not value.empty:
+            return _coerce_company_name(value.iloc[0, 0], ticker)
+        return fallback
+
+    text = str(value).strip()
+    return text if text and text != "nan" else fallback
+
+
+def _get_ticker_name(ticker: str) -> str:
+    if ticker in FALLBACK_COMPANY_NAMES:
+        fallback = FALLBACK_COMPANY_NAMES[ticker]
+    else:
+        fallback = ticker
+
+    if not PYKRX_AVAILABLE:
+        return fallback
+
+    try:
+        return _coerce_company_name(pykrx_stock.get_market_ticker_name(ticker), ticker)
+    except Exception:
+        return fallback
 
 
 # ---------------------------------------------------------------------------
@@ -57,16 +203,15 @@ def build_ticker_registry() -> dict:
 
     for market in ("KOSPI", "KOSDAQ", "KONEX"):
         try:
-            tickers = pykrx_stock.get_market_ticker_list(today, market=market)
+            tickers = _normalize_ticker_list(
+                pykrx_stock.get_market_ticker_list(today, market=market)
+            )
         except Exception as e:
             logger.warning(f"{market} 종목 리스트 조회 실패: {e}")
             tickers = []
 
         for ticker in tickers:
-            try:
-                name = pykrx_stock.get_market_ticker_name(ticker)
-            except Exception:
-                name = ticker
+            name = _get_ticker_name(ticker)
             registry[ticker] = {"ticker": ticker, "name": name, "market": market}
 
     # get_market_ticker_list 가 빈 결과를 반환하는 환경(KRX API 제한 등)에 대한 fallback
@@ -74,10 +219,7 @@ def build_ticker_registry() -> dict:
         logger.warning("전종목 리스트 조회 불가 — KOSPI200 fallback으로 레지스트리 구축")
         from tasks import _KOSPI200_FALLBACK
         for ticker in _KOSPI200_FALLBACK:
-            try:
-                name = pykrx_stock.get_market_ticker_name(ticker)
-            except Exception:
-                name = ticker
+            name = _get_ticker_name(ticker)
             registry[ticker] = {"ticker": ticker, "name": name, "market": "KOSPI"}
 
     logger.info(f"종목 레지스트리 구축 완료: {len(registry)}종목")
@@ -245,7 +387,8 @@ def search_companies(query: str) -> list[CompanyBrief]:
     query_lower = query.lower()
 
     for ticker, meta in registry.items():
-        name: str = meta.get("name", "")
+        ticker = _normalize_ticker(ticker) or str(ticker)
+        name = _coerce_company_name(meta.get("name", ""), ticker)
         if query_lower in name.lower() or query == ticker:
             price_info = get_current_price(ticker)
             results.append(CompanyBrief(
@@ -278,9 +421,10 @@ def get_company_brief(ticker: str) -> Optional[CompanyBrief]:
         return None
 
     price_info = get_current_price(ticker)
+    name = _coerce_company_name(meta.get("name", ticker), ticker)
     return CompanyBrief(
         ticker=ticker,
-        name=meta.get("name", ticker),
+        name=name,
         market=meta.get("market", ""),
         sector="",
         price=price_info.get("price") if price_info else None,

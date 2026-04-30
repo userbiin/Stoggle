@@ -1,6 +1,6 @@
-# stoggle 프로젝트 컨텍스트
+# Stoogle 프로젝트 컨텍스트
 
-당신은 **stoggle** 프로젝트의 개발 어시스턴트입니다.
+당신은 **Stoogle** 프로젝트의 개발 어시스턴트입니다.
 아래 내용을 숙지하고, 이후 모든 코딩 작업은 이 맥락을 기반으로 수행하세요.
 
 ---
@@ -15,7 +15,7 @@
 
 주식 투자자는 특정 기업의 이슈가 **어떤 다른 종목에 영향을 주는지** 파악하기 어렵다.
 예를 들어 삼성전자에 긍정적 뉴스가 터졌을 때, 협력업체·경쟁사·계열사 주가가 어떻게 움직일지
-한눈에 볼 수 있는 서비스가 없다. stoggle은 이 문제를 해결한다.
+한눈에 볼 수 있는 서비스가 없다. Stoogle은 이 문제를 해결한다.
 
 **3가지 핵심 가치:**
 1. 기업 간 관계도 시각화 (협력사 / 경쟁사 / 계열사 / 고객사)
@@ -46,7 +46,7 @@
 ## 프로젝트 폴더 구조
 
 ```
-stoggle/
+Stoogle/
 ├── frontend/
 │   ├── public/index.html
 │   ├── package.json
@@ -201,11 +201,11 @@ rank_score = (
 
 ```bash
 # 프론트엔드 (백엔드 없이도 mockData로 동작)
-cd stoggle/frontend
+cd Stoogle/frontend
 npm install && npm start
 
 # 백엔드
-cd stoggle/backend
+cd Stoogle/backend
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env          # API 키 입력 필요
@@ -225,7 +225,7 @@ celery -A tasks beat --loglevel=info
 ```
 OPENAI_API_KEY=...        # LLM 요약·관계 추출
 DART_API_KEY=...          # https://opendart.fss.or.kr 발급
-DATABASE_URL=postgresql://user:password@localhost:5432/stoggle
+DATABASE_URL=postgresql://user:password@localhost:5432/Stoogle
 REDIS_URL=redis://localhost:6379/0
 ALLOWED_ORIGINS=http://localhost:3000
 ```

@@ -2,10 +2,10 @@
 Redis 캐싱 서비스
 
 저장 키 구조:
-  stoggle:registry           — 전종목 레지스트리 (JSON, 매주 갱신)
-  stoggle:price:{ticker}     — 종목 현재가 (TTL 60초)
-  stoggle:history:{ticker}   — 주가 히스토리 (TTL 10분)
-  stoggle:news:{ticker}      — 뉴스 목록 (TTL 1시간)
+  Stoogle:registry           — 전종목 레지스트리 (JSON, 매주 갱신)
+  Stoogle:price:{ticker}     — 종목 현재가 (TTL 60초)
+  Stoogle:history:{ticker}   — 주가 히스토리 (TTL 10분)
+  Stoogle:news:{ticker}      — 뉴스 목록 (TTL 1시간)
 """
 import json
 import os
@@ -22,7 +22,7 @@ TTL_HISTORY = 600       # 히스토리: 10분
 TTL_NEWS = 3600         # 뉴스: 60분
 TTL_REGISTRY = 60 * 60 * 24 * 7  # 종목 레지스트리: 7일
 
-KEY_REGISTRY = "stoggle:registry"
+KEY_REGISTRY = "Stoogle:registry"
 
 
 def _get_client():
@@ -94,7 +94,7 @@ def get_price_cache(ticker: str) -> Optional[dict]:
     if client is None:
         return None
     try:
-        raw = client.get(f"stoggle:price:{ticker}")
+        raw = client.get(f"Stoogle:price:{ticker}")
         return json.loads(raw) if raw else None
     except Exception as e:
         logger.warning(f"가격 캐시 조회 실패 ({ticker}): {e}")
@@ -106,7 +106,7 @@ def set_price_cache(ticker: str, data: dict, ttl: int = TTL_PRICE) -> bool:
     if client is None:
         return False
     try:
-        client.setex(f"stoggle:price:{ticker}", ttl, json.dumps(data, ensure_ascii=False))
+        client.setex(f"Stoogle:price:{ticker}", ttl, json.dumps(data, ensure_ascii=False))
         return True
     except Exception as e:
         logger.warning(f"가격 캐시 저장 실패 ({ticker}): {e}")
@@ -122,7 +122,7 @@ def get_history_cache(ticker: str) -> Optional[list]:
     if client is None:
         return None
     try:
-        raw = client.get(f"stoggle:history:{ticker}")
+        raw = client.get(f"Stoogle:history:{ticker}")
         return json.loads(raw) if raw else None
     except Exception as e:
         logger.warning(f"히스토리 캐시 조회 실패 ({ticker}): {e}")
@@ -135,7 +135,7 @@ def set_history_cache(ticker: str, data: list, ttl: int = TTL_HISTORY) -> bool:
         return False
     try:
         client.setex(
-            f"stoggle:history:{ticker}", ttl,
+            f"Stoogle:history:{ticker}", ttl,
             json.dumps(data, ensure_ascii=False, default=str)
         )
         return True
@@ -153,7 +153,7 @@ def get_news_cache(ticker: str) -> Optional[list]:
     if client is None:
         return None
     try:
-        raw = client.get(f"stoggle:news:{ticker}")
+        raw = client.get(f"Stoogle:news:{ticker}")
         return json.loads(raw) if raw else None
     except Exception as e:
         logger.warning(f"뉴스 캐시 조회 실패 ({ticker}): {e}")
@@ -166,7 +166,7 @@ def set_news_cache(ticker: str, data: list, ttl: int = TTL_NEWS) -> bool:
         return False
     try:
         client.setex(
-            f"stoggle:news:{ticker}", ttl,
+            f"Stoogle:news:{ticker}", ttl,
             json.dumps(data, ensure_ascii=False, default=str)
         )
         return True

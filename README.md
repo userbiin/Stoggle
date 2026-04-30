@@ -1,8 +1,8 @@
-# stoggle — 주식 종목 인사이트 플랫폼
+# Stoogle — 주식 종목 인사이트 플랫폼
 
 > 어떤 기업을 검색해도 동일한 품질의 주가·뉴스·관계도 인사이트를 제공하는 "주식 전용 구글"
 
-상세 문서는 [stoggle/README.md](./stoggle/README.md)를 기준으로 관리합니다.
+상세 문서는 [Stoogle/README.md](./Stoogle/README.md)를 기준으로 관리합니다.
 
 검토 기준일: 2026-04-30
 
@@ -23,10 +23,12 @@
   - `/api/v1/relations/{ticker}`
   - `/health`
 - pykrx 기반 종목 검색/주가/시총 조회 서비스 구현
+- Redis 기반 종목 레지스트리/현재가/주가 히스토리/뉴스 캐싱 구현
+- Pearson 상관계수 기반 기업 관계 도출 및 D3 관계 그래프 구현
 - 네이버 금융 뉴스 크롤링 및 간단 감성/카테고리 분류 구현
 - OpenAI API 기반 요약/영향 종목 추론 구현, API 키 없을 때 fallback 처리
 - Redis 캐시 서비스와 Celery 자동화 태스크 골격 구현
-- SQLAlchemy ORM 모델 정의 완료
+- SQLAlchemy ORM 모델과 pgvector 뉴스 벡터 모델 정의 완료
 
 ---
 
@@ -35,22 +37,21 @@
 - 프론트엔드는 기본적으로 mock 데이터를 사용합니다. 실데이터 API 호출은 `REACT_APP_USE_MOCK=false`로 실행해야 합니다.
 - Supabase는 현재 SDK/Auth/Storage가 아니라 `DATABASE_URL`의 PostgreSQL 후보로만 잡혀 있습니다.
 - 로컬 DB는 루트 `docker-compose.yml`로 PostgreSQL 16 + pgvector를 실행할 수 있습니다.
-- SQLAlchemy 모델은 정의되어 있지만 라우터/서비스의 영구 저장 로직에는 아직 연결되어 있지 않습니다.
-- Celery beat schedule에 등록된 `tasks.prefetch_news_for_major_stocks`는 현재 함수 정의가 없습니다.
-- Supabase/PostgreSQL을 실제로 사용하려면 PostgreSQL 드라이버 의존성 추가가 필요합니다.
+- 핵심 주가/관계 API는 현재 Redis + pykrx 중심이며, DB 영구 저장은 선택적으로 확장할 영역입니다.
+- 뉴스 요약/관련도/중복 제거 에이전트는 구현되어 있지만 기존 뉴스 API 파이프라인에는 아직 완전히 연결되지 않았습니다.
 
 ---
 
 ## 빠른 실행
 
 ```bash
-cd stoggle/frontend
+cd Stoogle/frontend
 npm install
 npm start
 ```
 
 ```bash
-cd stoggle/backend
+cd Stoogle/backend
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -64,4 +65,4 @@ uvicorn main:app --reload --port 8000
 docker-compose up -d
 ```
 
-더 자세한 실행 방법, API 명세, 환경변수, 검토 결과, 남은 작업은 [stoggle/README.md](./stoggle/README.md)에 정리되어 있습니다.
+더 자세한 실행 방법, API 명세, 환경변수, 검토 결과, 남은 작업은 [Stoogle/README.md](./Stoogle/README.md)에 정리되어 있습니다.

@@ -22,7 +22,7 @@ EMBED_DIM = 1536  # text-embedding-3-small
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./stoggle.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./Stoogle.db")
 
 engine = create_engine(
     DATABASE_URL,

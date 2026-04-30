@@ -16,13 +16,13 @@ Stoogle ("주식 전용 구글") is a Korean stock insight search platform. It p
 
 ## Common Commands
 
-### Frontend (from `stoggle/frontend/`)
+### Frontend (from `Stoogle/frontend/`)
 ```bash
 npm install          # Install dependencies
 npm start            # Dev server on http://localhost:3000
 ```
 
-### Backend (from `stoggle/backend/`)
+### Backend (from `Stoogle/backend/`)
 ```bash
 pip install -r requirements.txt
 python models/db_models.py                    # Create/init DB tables
@@ -34,7 +34,7 @@ uvicorn main:app --reload --port 8000         # Dev server (Swagger at /docs)
 docker-compose up -d    # Start PostgreSQL with pgvector
 ```
 
-### Celery (from `stoggle/backend/`)
+### Celery (from `Stoogle/backend/`)
 ```bash
 celery -A tasks worker --loglevel=info    # Worker
 celery -A tasks beat --loglevel=info      # Scheduler (separate terminal)
@@ -42,7 +42,7 @@ celery -A tasks beat --loglevel=info      # Scheduler (separate terminal)
 
 ## Architecture
 
-### Backend Structure (`stoggle/backend/`)
+### Backend Structure (`Stoogle/backend/`)
 
 **Routers** → **Services** → **Models** pattern:
 
@@ -61,7 +61,7 @@ celery -A tasks beat --loglevel=info      # Scheduler (separate terminal)
 - `agents/naver_news_crawler.py`: Naver News API integration
 - `tasks.py`: Celery Beat schedule (news prefetch 8:30, prices 16:00, relations Monday 9:00 KST)
 
-### Frontend Structure (`stoggle/frontend/src/`)
+### Frontend Structure (`Stoogle/frontend/src/`)
 
 - Routes: `/` (MainPage), `/search?q=` (SearchResultsPage), `/company/:ticker` (CompanyDetailPage)
 - `utils/mockData.js` provides mock data; toggle via `REACT_APP_USE_MOCK`
@@ -76,7 +76,7 @@ celery -A tasks beat --loglevel=info      # Scheduler (separate terminal)
 
 ## Environment Variables
 
-See `stoggle/backend/.env.example`. Key variables: `OPENAI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `DART_API_KEY`.
+See `Stoogle/backend/.env.example`. Key variables: `OPENAI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `DART_API_KEY`.
 
 ## Git Workflow
 

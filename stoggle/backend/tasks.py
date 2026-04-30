@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-app = Celery("stoggle", broker=REDIS_URL, backend=REDIS_URL)
+app = Celery("Stoogle", broker=REDIS_URL, backend=REDIS_URL)
 
 app.conf.timezone = "Asia/Seoul"
 app.conf.beat_schedule = {
@@ -87,17 +87,48 @@ def _load_kospi200() -> list[str]:
     """
     try:
         from pykrx import stock as pykrx_stock
+        from services.stock_service import _normalize_ticker_list
+
         today = datetime.today().strftime("%Y%m%d")
         # KOSPI 200 인덱스 코드: 1028
-        tickers = pykrx_stock.get_index_portfolio_deposit_file("1028", date=today)
-        if tickers and len(tickers) > 10:
-            return list(tickers)
+        tickers = _normalize_ticker_list(
+            pykrx_stock.get_index_portfolio_deposit_file("1028", date=today)
+        )
+        if len(tickers) > 10:
+            return tickers
     except Exception as e:
         logger.warning(f"KOSPI200 구성 종목 조회 실패 — fallback 사용: {e}")
     return _KOSPI200_FALLBACK
 
 
 KOSPI200_TICKERS = _load_kospi200()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 뉴스 사전 수집
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(bind=True, max_retries=2, default_retry_delay=120)
+def prefetch_news_for_major_stocks(self):
+    """
+    주요 종목 뉴스 page=1을 미리 수집해 Redis에 캐싱한다.
+
+    beat_schedule에 등록된 태스크가 실제로 존재하도록 유지하고,
+    개별 종목 실패는 전체 워커를 멈추지 않도록 결과에 기록한다.
+    """
+    from services.news_service import fetch_news, rank_news
+
+    results = {}
+    for ticker in KOSPI200_TICKERS[:30]:
+        try:
+            items = asyncio.run(fetch_news(ticker, page=1, force=True))
+            ranked = rank_news(items)
+            results[ticker] = {"status": "ok", "count": len(ranked)}
+        except Exception as e:
+            logger.warning("뉴스 사전 수집 실패 (%s): %s", ticker, e)
+            results[ticker] = {"status": "error", "reason": str(e)}
+
+    return {"status": "ok", "prefetched": results}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

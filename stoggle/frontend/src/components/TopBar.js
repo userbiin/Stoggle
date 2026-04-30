@@ -51,7 +51,7 @@ export default function TopBar({ initialQuery = '' }) {
 
   return (
     <div style={styles.bar}>
-      <span style={styles.logo} onClick={() => navigate('/')}>Stoggle</span>
+      <span style={styles.logo} onClick={() => navigate('/')}>Stoogle</span>
       <div style={styles.searchBox}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" strokeWidth="2">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>

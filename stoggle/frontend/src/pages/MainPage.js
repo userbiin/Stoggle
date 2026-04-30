@@ -109,7 +109,7 @@ export default function MainPage() {
 
   return (
     <div style={styles.page}>
-      <div style={styles.logo}>Stoggle</div>
+      <div style={styles.logo}>Stoogle</div>
       <p style={styles.tagline}>주식 전용 인사이트 검색엔진</p>
 
       <div style={{ ...styles.searchBox, ...(focused ? styles.searchBoxFocused : {}) }}>

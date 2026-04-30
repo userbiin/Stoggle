@@ -1,18 +1,13 @@
 """
 상관계수 기반 연관 기업 관계 도출 서비스
 """
-from datetime import datetime, timedelta
 from typing import Optional
+import logging
 import numpy as np
-
-try:
-    from pykrx import stock as pykrx_stock
-    PYKRX_AVAILABLE = True
-except ImportError:
-    PYKRX_AVAILABLE = False
 
 from models.schemas import RelationNode, RelationLink, RelatedCompany, ImpactItem
 
+logger = logging.getLogger(__name__)
 
 RELATION_TYPES = {
     (0.8, 1.0): "경쟁",
@@ -34,18 +29,51 @@ def _get_name(ticker: str, registry: dict) -> str:
     return registry.get(ticker, {}).get("name", ticker)
 
 
-def _fetch_close_prices(ticker: str, days: int = 90) -> Optional[list[float]]:
-    if not PYKRX_AVAILABLE:
-        return None
+def _fetch_close_series(ticker: str, days: int = 90) -> dict[str, float]:
+    """
+    Redis 캐시가 적용된 stock_service를 통해 일자별 종가를 조회한다.
+
+    relation_service가 pykrx를 직접 호출하지 않게 해서 주가 히스토리 캐시 정책을
+    한곳(stock_service/cache_service)에 모은다.
+    """
     try:
-        today = datetime.today().strftime("%Y%m%d")
-        start = (datetime.today() - timedelta(days=days)).strftime("%Y%m%d")
-        df = pykrx_stock.get_market_ohlcv_by_date(start, today, ticker)
-        if df is None or df.empty:
-            return None
-        return df["종가"].tolist()
+        from services.stock_service import get_price_history
+
+        history = get_price_history(ticker, days=days)
+        return {
+            point.date: float(point.close)
+            for point in history
+            if point.close is not None
+        }
+    except Exception as e:
+        logger.warning("종가 시계열 조회 실패 (%s): %s", ticker, e)
+        return {}
+
+
+def _pearson_corr(
+    base_series: dict[str, float],
+    candidate_series: dict[str, float],
+    min_points: int = 20,
+) -> Optional[float]:
+    """두 종목의 공통 거래일 종가 기준 Pearson 상관계수."""
+    common_dates = sorted(set(base_series) & set(candidate_series))
+    if len(common_dates) < min_points:
+        return None
+
+    base = np.array([base_series[d] for d in common_dates], dtype=np.float64)
+    candidate = np.array([candidate_series[d] for d in common_dates], dtype=np.float64)
+
+    if np.std(base) == 0 or np.std(candidate) == 0:
+        return None
+
+    try:
+        corr = float(np.corrcoef(base, candidate)[0, 1])
     except Exception:
         return None
+
+    if np.isnan(corr):
+        return None
+    return corr
 
 
 def compute_relations(
@@ -66,7 +94,7 @@ def compute_relations(
     if candidate_tickers is None:
         candidate_tickers = [t for t in KOSPI200_TICKERS if t != ticker][:9]
 
-    base_prices = _fetch_close_prices(ticker)
+    base_series = _fetch_close_series(ticker)
 
     nodes = []
     links = []
@@ -76,17 +104,17 @@ def compute_relations(
     nodes.append(RelationNode(id=ticker, name=center_name, group=0, size=40))
 
     for i, cand in enumerate(candidate_tickers):
+        if cand == ticker:
+            continue
+
         cand_name = _get_name(cand, registry)
         size = max(10, 28 - i * 2)
 
-        if base_prices is not None:
-            cand_prices = _fetch_close_prices(cand)
-            if cand_prices and len(cand_prices) == len(base_prices):
-                correlation = float(np.corrcoef(base_prices, cand_prices)[0, 1])
-            else:
-                correlation = max(0.1, 0.9 - i * 0.08)
-        else:
-            correlation = max(0.1, 0.9 - i * 0.08)
+        cand_series = _fetch_close_series(cand)
+        correlation = _pearson_corr(base_series, cand_series)
+        if correlation is None:
+            logger.info("상관계수 계산 제외 (%s-%s): 공통 거래일 부족 또는 데이터 없음", ticker, cand)
+            continue
 
         correlation = round(abs(correlation), 2)
         rtype = _get_relation_type(correlation)
@@ -118,15 +146,14 @@ def compute_correlations_only(ticker: str) -> int:
     from tasks import KOSPI200_TICKERS
 
     candidate_tickers = [t for t in KOSPI200_TICKERS if t != ticker]
-    base_prices = _fetch_close_prices(ticker)
-    if base_prices is None:
+    base_series = _fetch_close_series(ticker)
+    if not base_series:
         return 0
 
     count = 0
     for cand in candidate_tickers:
-        cand_prices = _fetch_close_prices(cand)
-        if cand_prices and len(cand_prices) == len(base_prices):
-            _corr = float(np.corrcoef(base_prices, cand_prices)[0, 1])  # noqa: F841
+        cand_series = _fetch_close_series(cand)
+        if _pearson_corr(base_series, cand_series) is not None:
             count += 1
 
     return count
