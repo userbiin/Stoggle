@@ -1,22 +1,21 @@
-# Stoogle — 주식 종목 인사이트 플랫폼
+# Stoggle — 주식 종목 인사이트 플랫폼
 
-> 어떤 기업을 검색해도 동일한 품질의 주가·뉴스·관계도 인사이트를 제공하는 "주식 전용 구글"
-
-검토 기준일: 2026-04-30
+최종 update : 2026-04-30
 
 ---
 
 ## 프로젝트 개요
 
-Stoogle은 한국 주식 종목을 검색하면 기업 상세 정보, 주가 차트, 최근 뉴스, 키워드, 연관 기업 관계도, 영향 종목을 한 화면에서 보여주는 웹 애플리케이션입니다.
+✨ 한국 주식 종목을 검색하면 기업 상세 정보, 주가 차트, 최근 뉴스, 키워드, 연관 기업 관계도, 영향 종목을 한 화면에서 보여주는 웹 애플리케이션
 
-현재 코드는 **KRX 주가 수집, Redis 캐싱, FastAPI API 서빙, Pearson 상관계수 기반 기업 관계 도출, D3 관계 시각화가 구현된 MVP 단계**입니다. 프론트엔드는 기본적으로 mock 데이터를 사용하며, `REACT_APP_USE_MOCK=false`로 설정하면 FastAPI 백엔드 API를 호출합니다.
+현재 코드는 **KRX 주가 수집, Redis 캐싱, FastAPI API 서빙, Pearson 상관계수 기반 기업 관계 도출, D3 관계 시각화가 구현된 MVP 단계** 
+Frontend는 기본적으로 mock 데이터를 사용하며, `REACT_APP_USE_MOCK=false`로 설정하면 FastAPI 백엔드 API를 호출함
 
 ---
 
 ## 현재 구현 상태
 
-### 프론트엔드
+### FE
 
 - React 18 + React Router v6 기반 SPA
 - 라우트 구현
@@ -32,7 +31,7 @@ Stoogle은 한국 주식 종목을 검색하면 기업 상세 정보, 주가 차
   - Recharts — 주가 AreaChart
   - D3 + d3-cloud — 관계 그래프, 워드 클라우드
 - 현재 스타일 방식
-  - CSS Modules가 아니라 `global.css`의 CSS 변수 + 컴포넌트 내부 인라인 스타일 중심
+  - `global.css`의 CSS 변수 + 컴포넌트 내부 인라인 스타일 중심으로 구현
 - API 연결 방식
   - `Stoogle/frontend/package.json`의 `"proxy": "http://localhost:8000"` 설정
   - `axios.get('/api/v1/...')` 형태로 FastAPI 호출
@@ -40,7 +39,7 @@ Stoogle은 한국 주식 종목을 검색하면 기업 상세 정보, 주가 차
   - `REACT_APP_USE_MOCK !== 'false'`이면 mock 데이터 사용
   - 실데이터를 보려면 프론트 실행 시 `REACT_APP_USE_MOCK=false` 필요
 
-### 백엔드
+### BE
 
 - FastAPI 앱과 라우터 구현
   - `GET /api/v1/search?q={query}`
@@ -141,10 +140,8 @@ npm install
 npm start
 ```
 
-기본값은 mock 데이터 모드입니다.
 
 ```bash
-# 백엔드 API를 호출하려면
 REACT_APP_USE_MOCK=false npm start
 ```
 
@@ -169,8 +166,6 @@ Swagger UI: `http://localhost:8000/docs`
 
 ### 3. Redis / Celery 실행
 
-Redis는 캐시와 Celery broker/backend로 사용됩니다. Redis가 없어도 일부 API는 외부 API를 직접 호출하며 동작하지만, 검색/주가/뉴스 성능과 자동화 태스크에는 Redis가 필요합니다.
-
 ```bash
 docker run -d -p 6379:6379 redis:7
 
@@ -180,8 +175,6 @@ celery -A tasks beat --loglevel=info
 ```
 
 ### 4. 로컬 PostgreSQL 실행
-
-루트의 `docker-compose.yml`은 PostgreSQL 16 + pgvector 이미지를 실행합니다.
 
 ```bash
 docker-compose up -d
@@ -207,9 +200,7 @@ DATABASE_URL=postgresql://stoogle:stoogle1234@localhost:5432/stoogle
 
 ---
 
-## Notion API 명세 블록 기준 진행 상태
-
-캡처된 API 명세는 뉴스·DART·LLM 분석까지 포함한 전체 자동화 파이프라인입니다. 현재 우선 구현 범위는 KRX 주가 수집, Redis 캐싱, FastAPI API 서빙, Pearson 기업 관계 도출, D3 관계 시각화입니다.
+## API 명세
 
 | 단계 | 명칭 | 명세 요약 | 현재 상태 |
 |------|------|-----------|-----------|
@@ -238,8 +229,6 @@ DATABASE_URL=postgresql://stoogle:stoogle1234@localhost:5432/stoogle
 
 ## 환경변수
 
-`Stoogle/backend/.env.example`을 복사해 `.env`를 생성합니다.
-
 ```env
 OPENAI_API_KEY=sk-...
 LLM_MODEL=gpt-4o-mini
@@ -254,42 +243,17 @@ EXAONE_BASE_URL=https://api.exaone.lgai.ai/v1
 EXAONE_MODEL=EXAONE-3.5-7.8B-Instruct
 ```
 
-주의:
+✔️ 확인 사항 :
 
-- OpenAI API 키가 없으면 LLM 요약과 영향 종목 추론은 fallback 또는 빈 결과로 처리됩니다.
-- EXAONE API 키가 없으면 관련도 판별 에이전트는 0점 처리되며, 현재 핵심 주가/관계 API에는 영향이 없습니다.
-- DART API 키가 없으면 공시 수집 Celery 태스크는 skip됩니다.
-- `DATABASE_URL`은 SQLAlchemy 테이블 생성과 pgvector 뉴스 색인 모듈에서 사용됩니다.
-- PostgreSQL 드라이버(`psycopg2-binary`)와 `pgvector` Python 패키지는 `requirements.txt`에 포함되어 있습니다.
-- 예제 파일에는 실제 서비스 키를 넣지 말고 placeholder만 유지하는 것이 안전합니다.
-
----
-
-## Supabase / DB 사용 현황
-
-현재 Supabase는 SDK, Auth, Storage로 사용되지 않습니다. `.env.example`의 `DATABASE_URL`이 Supabase Postgres Pooler 주소로 되어 있어 **관리형 PostgreSQL 후보**로 잡혀 있는 상태입니다.
-
-로컬 개발용으로는 루트 `docker-compose.yml`에 PostgreSQL 16 + pgvector 구성이 있습니다. 따라서 DB 선택지는 크게 두 가지입니다.
-
-- 로컬 개발: `docker-compose up -d` 후 `postgresql://stoogle:stoogle1234@localhost:5432/stoogle`
-- 관리형 운영 후보: Supabase Pooler URL
-
-현재 구현:
-
-- SQLAlchemy ORM 모델은 정의되어 있음
-- `news_vectors` 테이블과 `Vector(1536)` embedding 컬럼 정의
-- `python models/db_models.py` 실행 시 PostgreSQL에서는 `CREATE EXTENSION IF NOT EXISTS vector` 수행
-- `agents/dedup_indexer.py`에서 OpenAI embedding + pgvector cosine distance 기반 중복 제거/색인 구현
-- `python models/db_models.py`로 테이블 생성 가능
-- `DATABASE_URL`이 없으면 SQLite(`sqlite:///./Stoogle.db`)로 fallback
-
-아직 제한:
-
-- 핵심 주가/관계 API는 Redis + pykrx 중심이며 DB 영구 저장을 필수로 사용하지 않음
-- 뉴스 요약/관련도/중복 제거 에이전트는 구현되어 있지만 기존 뉴스 API 파이프라인에 완전히 연결되지는 않음
-- Supabase Pooler 환경에서 pgvector extension 생성 권한과 vector index 생성 전략은 별도 검증 필요
+- OpenAI API 키가 없으면 LLM 요약과 영향 종목 추론은 fallback 또는 빈 결과로 처리됨
+- EXAONE API 키가 없으면 관련도 판별 에이전트는 0점 처리되며, 현재 핵심 주가/관계 API에는 영향 X
+- DART API 키가 없으면 공시 수집 Celery 태스크는 skip
+- `DATABASE_URL`은 SQLAlchemy 테이블 생성과 pgvector 뉴스 색인 모듈에서 사용
+- PostgreSQL 드라이버(`psycopg2-binary`)와 `pgvector` Python 패키지는 `requirements.txt`에 포함
+- ‼️ 파일에 API Key 넣지 말 것!! -> 제외하고 commit
 
 ---
+
 
 ## Celery 스케줄
 
@@ -304,13 +268,9 @@ EXAONE_MODEL=EXAONE-3.5-7.8B-Instruct
 | `update_relation_graphs` | 매주 월요일 09:00 | 관계도 계산 수행, 영구 저장 미구현 |
 | `refresh_ticker_registry` | 매주 월요일 07:00 | KRX 종목 레지스트리 Redis 갱신 |
 
-현재 주의점:
-
-- 일부 주석은 Redis/DB 저장을 암시하지만 실제 구현은 계산 후 반환 또는 Redis TTL 캐시 중심입니다.
-
 ---
 
-## 검토 결과와 남은 작업
+## 진행 상황 요약
 
 ### 완료
 
@@ -342,7 +302,7 @@ EXAONE_MODEL=EXAONE-3.5-7.8B-Instruct
 
 ---
 
-## 개발 우선순위 제안
+## Priority
 
 1. **실행 검증** — 프론트 mock 모드, 백엔드 `/docs`, Redis 없는 상태의 fallback 확인
 2. **실데이터 연결** — `REACT_APP_USE_MOCK=false`로 검색/상세 페이지 E2E 검증
