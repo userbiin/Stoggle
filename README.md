@@ -1,10 +1,6 @@
-# Stoogle — 주식 종목 인사이트 플랫폼
+# Stoggle — 주식 종목 인사이트 플랫폼
 
-> 어떤 기업을 검색해도 동일한 품질의 주가·뉴스·관계도 인사이트를 제공하는 "주식 전용 구글"
-
-상세 문서는 [Stoogle/README.md](./Stoogle/README.md)를 기준으로 관리합니다.
-
-검토 기준일: 2026-04-30
+최종 update : 2026-04-30
 
 ---
 
@@ -32,13 +28,11 @@
 
 ---
 
-## 주요 주의점
+## 추가 검토 사항
 
-- 프론트엔드는 기본적으로 mock 데이터를 사용합니다. 실데이터 API 호출은 `REACT_APP_USE_MOCK=false`로 실행해야 합니다.
-- Supabase는 현재 SDK/Auth/Storage가 아니라 `DATABASE_URL`의 PostgreSQL 후보로만 잡혀 있습니다.
-- 로컬 DB는 루트 `docker-compose.yml`로 PostgreSQL 16 + pgvector를 실행할 수 있습니다.
-- 핵심 주가/관계 API는 현재 Redis + pykrx 중심이며, DB 영구 저장은 선택적으로 확장할 영역입니다.
-- 뉴스 요약/관련도/중복 제거 에이전트는 구현되어 있지만 기존 뉴스 API 파이프라인에는 아직 완전히 연결되지 않았습니다.
+- 현재 frontend -> mock data 로 실행 중 (실데이터 API `REACT_APP_USE_MOCK=false` 호출 필요)
+- 아직 Supabase 구현 X
+- 에이전트 연결 필요 
 
 ---
 
@@ -64,5 +58,3 @@ uvicorn main:app --reload --port 8000
 # 선택: 로컬 PostgreSQL 16 + pgvector
 docker-compose up -d
 ```
-
-더 자세한 실행 방법, API 명세, 환경변수, 검토 결과, 남은 작업은 [Stoogle/README.md](./Stoogle/README.md)에 정리되어 있습니다.
