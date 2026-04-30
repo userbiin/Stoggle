@@ -1,147 +1,313 @@
 # stoggle — 주식 종목 인사이트 플랫폼
 
-> 어떤 기업을 검색해도 동일한 품질의 인사이트를 제공하는 "주식 전용 구글"
+> 어떤 기업을 검색해도 동일한 품질의 주가·뉴스·관계도 인사이트를 제공하는 "주식 전용 구글"
+
+검토 기준일: 2026-04-30
+
+---
+
+## 프로젝트 개요
+
+stoggle은 한국 주식 종목을 검색하면 기업 상세 정보, 주가 차트, 최근 뉴스, 키워드, 연관 기업 관계도, 영향 종목을 한 화면에서 보여주는 웹 애플리케이션입니다.
+
+현재 코드는 **프론트엔드 화면과 백엔드 API 골격이 모두 구현된 MVP 단계**입니다. 프론트엔드는 기본적으로 mock 데이터를 사용하며, `REACT_APP_USE_MOCK=false`로 설정하면 FastAPI 백엔드 API를 호출합니다.
+
+---
+
+## 현재 구현 상태
+
+### 프론트엔드
+
+- React 18 + React Router v6 기반 SPA
+- 라우트 구현
+  - `/` — 검색 홈
+  - `/search?q={query}` — 검색 결과
+  - `/company/:ticker` — 기업 상세 인사이트
+- 구현된 화면/컴포넌트
+  - `MainPage` — 구글 스타일 검색 홈, 추천 검색 칩
+  - `SearchResultsPage` — 종목 검색 결과, 백엔드 API 또는 mock 데이터 사용
+  - `CompanyDetailPage` — 기업 요약, 지표, 주가 차트, 키워드, 뉴스, 관계도, 영향 종목
+  - `TopBar`, `PriceChart`, `WordCloudSection`, `NewsSection`, `RelationGraph`, `RelationList`, `ImpactList`
+- 시각화 라이브러리
+  - Recharts — 주가 AreaChart
+  - D3 + d3-cloud — 관계 그래프, 워드 클라우드
+- 현재 스타일 방식
+  - CSS Modules가 아니라 `global.css`의 CSS 변수 + 컴포넌트 내부 인라인 스타일 중심
+- API 연결 방식
+  - `stoggle/frontend/package.json`의 `"proxy": "http://localhost:8000"` 설정
+  - `axios.get('/api/v1/...')` 형태로 FastAPI 호출
+- mock 기본값
+  - `REACT_APP_USE_MOCK !== 'false'`이면 mock 데이터 사용
+  - 실데이터를 보려면 프론트 실행 시 `REACT_APP_USE_MOCK=false` 필요
+
+### 백엔드
+
+- FastAPI 앱과 라우터 구현
+  - `GET /api/v1/search?q={query}`
+  - `GET /api/v1/insight/{ticker}`
+  - `GET /api/v1/news/{ticker}`
+  - `GET /api/v1/relations/{ticker}`
+  - `GET /health`
+- 주가/종목 서비스
+  - `pykrx`로 KOSPI/KOSDAQ/KONEX 종목 레지스트리 구축
+  - 종목 검색, 현재가, 주가 히스토리, 시총/PER/PBR/EPS 조회
+  - Redis 캐시 우선 사용, 캐시 미스 시 `pykrx` 직접 호출
+- 뉴스 서비스
+  - 네이버 금융 종목 뉴스 페이지 크롤링
+  - 간단한 규칙 기반 뉴스 카테고리 분류와 감성 라벨링
+  - page=1 뉴스 Redis 캐시
+- NLP/LLM
+  - `konlpy`가 있으면 Okt 명사 추출, 실패 시 정규식 fallback
+  - OpenAI API 키가 있으면 뉴스 요약 생성
+  - API 키가 없거나 호출 실패 시 간단 fallback 요약 반환
+- 관계 분석
+  - 기준 종목과 KOSPI200 후보 종목 간 종가 상관계수 계산
+  - D3 관계 그래프용 `nodes`, `links`, `related_companies` 반환
+  - OpenAI API 키가 있으면 최신 뉴스와 관계사 목록을 바탕으로 영향 종목 추론
+- Celery 자동화
+  - Redis broker/backend 사용
+  - 주가 캐시, 뉴스 크롤링, DART 공시 수집, 상관계수 재계산, 관계도 갱신 태스크 정의
+- DB 모델
+  - SQLAlchemy ORM 모델 정의 완료
+  - `companies`, `price_history`, `news_cache`, `insight_cache`, `relation_cache`
+  - 현재 API/서비스 흐름에는 DB 저장·조회가 아직 연결되어 있지 않음
 
 ---
 
 ## 프로젝트 구조
 
-```
+```text
 stoggle/
-├── frontend/                  # React 앱
+├── frontend/
+│   ├── package.json
 │   ├── public/
 │   │   └── index.html
-│   ├── src/
-│   │   ├── App.js             # 라우팅
-│   │   ├── index.js           # 엔트리포인트
-│   │   ├── pages/
-│   │   │   ├── MainPage.js            # 구글 스타일 검색 홈
-│   │   │   ├── SearchResultsPage.js   # 검색 결과 (동명기업 선택)
-│   │   │   └── CompanyDetailPage.js   # 기업 상세 인사이트
-│   │   ├── components/
-│   │   │   ├── TopBar.js              # 상단 고정 검색바
-│   │   │   ├── PriceChart.js          # Recharts 주가 차트
-│   │   │   ├── WordCloudSection.js    # 키워드 시각화
-│   │   │   ├── NewsSection.js         # 뉴스 목록 + 탭 필터
-│   │   │   ├── RelationGraph.js       # D3 포스 그래프
-│   │   │   ├── RelationList.js        # 연관 기업 목록
-│   │   │   └── ImpactList.js          # 영향 종목 리스트
-│   │   ├── utils/
-│   │   │   └── mockData.js            # 백엔드 없이 개발용 목 데이터
-│   │   └── styles/
-│   │       └── global.css             # CSS 변수 + 리셋
-│   └── package.json
+│   └── src/
+│       ├── App.js
+│       ├── index.js
+│       ├── pages/
+│       │   ├── MainPage.js
+│       │   ├── SearchResultsPage.js
+│       │   └── CompanyDetailPage.js
+│       ├── components/
+│       │   ├── TopBar.js
+│       │   ├── PriceChart.js
+│       │   ├── WordCloudSection.js
+│       │   ├── NewsSection.js
+│       │   ├── RelationGraph.js
+│       │   ├── RelationList.js
+│       │   └── ImpactList.js
+│       ├── utils/
+│       │   └── mockData.js
+│       └── styles/
+│           └── global.css
 │
-├── backend/                   # FastAPI 앱
-│   ├── main.py                # 앱 진입점 + CORS
-│   ├── tasks.py               # Celery 자동화 스케줄러
+├── backend/
+│   ├── main.py
+│   ├── tasks.py
 │   ├── requirements.txt
 │   ├── .env.example
 │   ├── routers/
-│   │   ├── search.py          # GET /api/v1/search?q=
-│   │   ├── insight.py         # GET /api/v1/insight/{ticker}
-│   │   ├── news.py            # GET /api/v1/news/{ticker}
-│   │   └── relations.py       # GET /api/v1/relations/{ticker}
+│   │   ├── search.py
+│   │   ├── insight.py
+│   │   ├── news.py
+│   │   └── relations.py
 │   ├── services/
-│   │   ├── stock_service.py   # pykrx 범용 주가 수집
-│   │   ├── news_service.py    # 뉴스 크롤링 + 랭킹
-│   │   ├── nlp_service.py     # 키워드 추출 + LLM 요약
-│   │   └── relation_service.py # 상관계수 기반 관계 도출
+│   │   ├── stock_service.py
+│   │   ├── news_service.py
+│   │   ├── nlp_service.py
+│   │   ├── relation_service.py
+│   │   └── cache_service.py
 │   ├── models/
-│   │   ├── schemas.py         # Pydantic 응답 스키마
-│   │   └── db_models.py       # SQLAlchemy ORM
+│   │   ├── schemas.py
+│   │   └── db_models.py
 │   └── agents/
-│       └── news_agent.py      # LangChain 뉴스 에이전트
-│
+│       ├── news_agent.py
+│       └── naver_news_crawler.py
 └── README.md
 ```
 
 ---
 
-## 빠른 시작 (Claude Code에서 실행)
+## 빠른 시작
 
-### 1단계 — 프론트엔드 실행
+### 1. 프론트엔드 실행
 
 ```bash
 cd stoggle/frontend
 npm install
 npm start
-# → http://localhost:3000
 ```
 
-백엔드 없이도 mockData.js로 UI 전체를 확인할 수 있습니다.
+기본값은 mock 데이터 모드입니다.
 
----
+```bash
+# 백엔드 API를 호출하려면
+REACT_APP_USE_MOCK=false npm start
+```
 
-### 2단계 — 백엔드 실행
+실행 주소: `http://localhost:3000`
+
+### 2. 백엔드 실행
 
 ```bash
 cd stoggle/backend
 
-# 가상환경 생성
 python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+source venv/bin/activate
 
-# 의존성 설치
 pip install -r requirements.txt
-
-# 환경변수 설정
 cp .env.example .env
-# .env 파일에서 OPENAI_API_KEY, DART_API_KEY 입력
 
-# DB 테이블 생성
 python models/db_models.py
-
-# 서버 시작
 uvicorn main:app --reload --port 8000
-# → http://localhost:8000/docs  (Swagger UI 자동 생성)
 ```
 
----
+Swagger UI: `http://localhost:8000/docs`
 
-### 3단계 — Celery 자동화 (선택)
+### 3. Redis / Celery 실행
 
-Redis가 필요합니다.
+Redis는 캐시와 Celery broker/backend로 사용됩니다. Redis가 없어도 일부 API는 외부 API를 직접 호출하며 동작하지만, 검색/주가/뉴스 성능과 자동화 태스크에는 Redis가 필요합니다.
 
 ```bash
-# Redis 실행 (Docker)
 docker run -d -p 6379:6379 redis:7
 
-# Celery 워커 실행
 cd stoggle/backend
 celery -A tasks worker --loglevel=info
-
-# Celery Beat 스케줄러 실행 (별도 터미널)
 celery -A tasks beat --loglevel=info
+```
+
+### 4. 로컬 PostgreSQL 실행
+
+루트의 `docker-compose.yml`은 PostgreSQL 16 + pgvector 이미지를 실행합니다.
+
+```bash
+docker-compose up -d
+```
+
+기본 접속 정보:
+
+```env
+DATABASE_URL=postgresql://stoogle:stoogle1234@localhost:5432/stoogle
 ```
 
 ---
 
 ## API 엔드포인트
 
-| Method | URL | 설명 |
-|--------|-----|------|
-| GET | `/api/v1/search?q={query}` | 기업명·종목코드 검색 |
-| GET | `/api/v1/insight/{ticker}` | 기업 종합 인사이트 |
-| GET | `/api/v1/news/{ticker}` | 기업 뉴스 목록 |
-| GET | `/api/v1/relations/{ticker}` | 연관 기업 관계도 |
-| GET | `/health` | 서버 상태 확인 |
+| Method | URL | 설명 | 현재 데이터 소스 |
+|--------|-----|------|------------------|
+| GET | `/api/v1/search?q={query}` | 기업명·종목코드 검색 | Redis registry → pykrx |
+| GET | `/api/v1/insight/{ticker}` | 기업 종합 인사이트 | pykrx + 뉴스 + NLP/LLM |
+| GET | `/api/v1/news/{ticker}` | 기업 뉴스 목록 | Redis news cache → 네이버 금융 크롤링 |
+| GET | `/api/v1/relations/{ticker}` | 연관 기업 관계도/영향 종목 | pykrx 상관계수 + OpenAI optional |
+| GET | `/health` | 서버 상태 확인 | FastAPI |
 
 ---
 
-## 외부 API 키 발급
+## 환경변수
 
-| 서비스 | 발급 URL | 용도 |
-|--------|---------|------|
-| OpenAI | https://platform.openai.com | LLM 요약·관계 추출 |
-| DART | https://opendart.fss.or.kr | 공시 데이터 |
+`stoggle/backend/.env.example`을 복사해 `.env`를 생성합니다.
+
+```env
+OPENAI_API_KEY=sk-...
+LLM_MODEL=gpt-4o-mini
+DART_API_KEY=
+DATABASE_URL=postgresql://postgres.[PROJECT_ID]:[YOUR-PASSWORD]@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres
+REDIS_URL=redis://localhost:6379/0
+ALLOWED_ORIGINS=http://localhost:3000
+NAVER_CLIENT_ID=...
+NAVER_CLIENT_SECRET=...
+```
+
+주의:
+
+- OpenAI API 키가 없으면 LLM 요약과 영향 종목 추론은 fallback 또는 빈 결과로 처리됩니다.
+- DART API 키가 없으면 공시 수집 Celery 태스크는 skip됩니다.
+- `DATABASE_URL`은 현재 SQLAlchemy 테이블 생성에만 직접 사용됩니다.
+- Supabase URL을 실제로 사용하려면 PostgreSQL 드라이버(`psycopg2` 또는 `psycopg`) 의존성 추가가 필요합니다.
+- 예제 파일에는 실제 서비스 키를 넣지 말고 placeholder만 유지하는 것이 안전합니다.
 
 ---
 
-## 개발 우선순위
+## Supabase / DB 사용 현황
 
-1. **Phase 1** — `npm start`로 프론트 UI 확인 (mockData 사용)
-2. **Phase 2** — FastAPI 백엔드 실행 + `/api/v1/search` 연동
-3. **Phase 3** — 뉴스·주가 실데이터 연결
-4. **Phase 4** — LLM 요약 + 관계 그래프 자동화
-5. **Phase 5** — Celery로 전종목 자동 업데이트
+현재 Supabase는 SDK, Auth, Storage로 사용되지 않습니다. `.env.example`의 `DATABASE_URL`이 Supabase Postgres Pooler 주소로 되어 있어 **관리형 PostgreSQL 후보**로 잡혀 있는 상태입니다.
+
+로컬 개발용으로는 루트 `docker-compose.yml`에 PostgreSQL 16 + pgvector 구성이 있습니다. 따라서 DB 선택지는 크게 두 가지입니다.
+
+- 로컬 개발: `docker-compose up -d` 후 `postgresql://stoogle:stoogle1234@localhost:5432/stoogle`
+- 관리형 운영 후보: Supabase Pooler URL
+
+현재 구현:
+
+- SQLAlchemy ORM 모델은 정의되어 있음
+- `python models/db_models.py`로 테이블 생성 가능
+- `DATABASE_URL`이 없으면 SQLite(`sqlite:///./stoggle.db`)로 fallback
+
+아직 미연결:
+
+- 라우터/서비스에서 `SessionLocal` 또는 `get_db()`를 사용하지 않음
+- 뉴스/인사이트/관계 분석 결과가 DB에 영구 저장되지 않음
+- 운영 환경에서 Supabase Postgres를 쓰려면 PostgreSQL 드라이버와 저장/조회 로직을 추가해야 함
+
+---
+
+## Celery 스케줄
+
+| 태스크 | 주기 | 현재 상태 |
+|--------|------|-----------|
+| `fetch_top200_prices` | 60초 | 장중 KOSPI200 현재가 Redis 캐싱 |
+| `update_price_history` | 매일 16:00 | 90일 히스토리 Redis 캐싱 |
+| `crawl_all_news` | 매시 정각 | KOSPI200 뉴스 강제 크롤링 후 Redis 캐싱 |
+| `fetch_dart_filings` | 매일 08:00 | DART API 키 필요, 결과는 현재 반환값 중심 |
+| `recompute_correlations` | 매일 00:00 | 상관계수 계산만 수행, 영구 저장 미구현 |
+| `update_relation_graphs` | 매주 월요일 09:00 | 관계도 계산 수행, 영구 저장 미구현 |
+| `refresh_ticker_registry` | 매주 월요일 07:00 | KRX 종목 레지스트리 Redis 갱신 |
+
+현재 주의점:
+
+- beat schedule에 `tasks.prefetch_news_for_major_stocks`가 등록되어 있으나 함수 정의가 없습니다.
+- 일부 주석은 Redis/DB 저장을 암시하지만 실제 구현은 계산 후 반환 또는 Redis TTL 캐시 중심입니다.
+
+---
+
+## 검토 결과와 남은 작업
+
+### 완료
+
+- [x] React SPA 라우팅 구현
+- [x] 검색 홈/검색 결과/기업 상세 화면 구현
+- [x] mock 데이터 기반 프론트엔드 전체 플로우 구현
+- [x] FastAPI 앱, CORS, 라우터 4종 구현
+- [x] pykrx 기반 종목 검색/주가/시총 데이터 수집 서비스 구현
+- [x] 네이버 금융 뉴스 크롤링 및 간단 랭킹/분류 구현
+- [x] 키워드 추출 및 OpenAI 요약 fallback 구현
+- [x] D3 관계 그래프용 데이터 생성 구현
+- [x] Celery 자동화 태스크 골격 구현
+- [x] SQLAlchemy ORM 모델 정의
+
+### 진행 중 / 보완 필요
+
+- [ ] `REACT_APP_USE_MOCK=false` 상태에서 프론트-백엔드 실데이터 E2E 검증
+- [ ] Redis 실행 환경에서 검색/뉴스/가격 캐시 동작 검증
+- [ ] Celery beat의 미정의 태스크(`prefetch_news_for_major_stocks`) 추가 또는 스케줄 제거
+- [ ] Supabase/PostgreSQL 사용 여부 결정 및 DB 영구 저장 로직 연결
+- [ ] PostgreSQL 사용 시 `requirements.txt`에 드라이버 추가
+- [ ] DART 공시 수집에서 ticker와 corp_code 매핑 검증
+- [ ] 관계도/상관계수 계산 결과 저장 구조 구현
+- [ ] API 에러 응답과 프론트 fallback UX 보강
+- [ ] 단위 테스트/통합 테스트 추가
+- [ ] `.env.example`의 민감 키 placeholder 정리
+
+---
+
+## 개발 우선순위 제안
+
+1. **실행 검증** — 프론트 mock 모드, 백엔드 `/docs`, Redis 없는 상태의 fallback 확인
+2. **실데이터 연결** — `REACT_APP_USE_MOCK=false`로 검색/상세 페이지 E2E 검증
+3. **Redis 안정화** — registry, price, history, news 캐시 TTL과 장애 fallback 점검
+4. **Celery 정리** — 미정의 태스크 수정, 각 태스크 실제 저장 위치 명확화
+5. **DB 방향 결정** — SQLite 유지, Supabase Postgres 도입, 또는 Redis 중심 유지 중 선택
+6. **영구 저장 구현** — 뉴스/요약/관계 분석 결과를 SQLAlchemy 모델과 연결
+7. **테스트 추가** — 서비스 함수 fallback, API 응답 스키마, 프론트 API 모드 검증
