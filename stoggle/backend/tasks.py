@@ -67,6 +67,12 @@ app.conf.beat_schedule = {
         "task": "tasks.refresh_ticker_registry",
         "schedule": crontab(hour=7, minute=0, day_of_week="monday"),
     },
+    # ── 보정 ───────────────────────────────────────────────────────────────
+    # 예측 정확도 평가 + confidence 보정 (매일 오전 2시)
+    "calibrate-predictions-daily": {
+        "task": "tasks.calibrate_predictions",
+        "schedule": crontab(hour=2, minute=0),
+    },
 }
 
 # KOSPI 200 구성 종목 — pykrx로 동적 조회, 실패 시 아래 fallback 사용
@@ -340,6 +346,28 @@ def update_relation_graphs(self):
             self.retry(exc=e)
 
     return {"status": "ok", "updated": results}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 보정 태스크
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(bind=True, max_retries=2, default_retry_delay=300)
+def calibrate_predictions(self):
+    """예측 정확도 평가 + confidence 보정 (매일 02:00)"""
+    from agents.calibrator import run_daily
+
+    try:
+        result = asyncio.run(run_daily())
+        return {
+            "status": "ok",
+            "sample_count": result.sample_count,
+            "direction_accuracy": round(result.direction_accuracy, 4),
+            "mean_calibrated_confidence": round(result.mean_calibrated_confidence, 4),
+        }
+    except Exception as e:
+        logger.error("calibrate_predictions 실패: %s", e)
+        raise self.retry(exc=e)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

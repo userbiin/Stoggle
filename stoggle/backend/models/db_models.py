@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 from sqlalchemy import (
     create_engine, Column, String, Float, Integer,
-    DateTime, Text, UniqueConstraint, event,
+    DateTime, Text, Boolean, UniqueConstraint, event,
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from dotenv import load_dotenv
@@ -110,6 +110,26 @@ class DartAnalysis(Base):
     analyzed_at = Column(DateTime, default=datetime.utcnow)
 
 
+class PredictionLog(Base):
+    __tablename__ = "prediction_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(10), index=True, nullable=False)   # 예측 대상 종목
+    source_ticker = Column(String(10), index=True)            # 분석 출처 종목
+    direction = Column(String(10), nullable=False)            # up/down/neutral
+    confidence = Column(Float, nullable=False)                # 원시 confidence 0.0~1.0
+    calibrated_confidence = Column(Float)                     # 보정 후 (nullable)
+    reason = Column(Text)                                     # 판단 근거 (임베딩용)
+    prediction_date = Column(String(10), index=True)          # D+0 YYYY-MM-DD
+    target_date = Column(String(10), index=True)              # D+3 YYYY-MM-DD
+    predicted_at = Column(DateTime, default=datetime.utcnow)
+    base_close = Column(Float)                                # D+0 종가
+    actual_close = Column(Float)                              # D+3 종가 (사후)
+    actual_direction = Column(String(10))                     # 실제 방향 (사후)
+    is_correct = Column(Boolean)                              # 방향 일치 여부 (사후)
+    evaluated_at = Column(DateTime)                           # 평가 시각
+
+
 if PGVECTOR_AVAILABLE:
     class NewsVector(Base):
         __tablename__ = "news_vectors"
@@ -119,8 +139,19 @@ if PGVECTOR_AVAILABLE:
         url = Column(String(1000), unique=True, nullable=False)
         embedding = Column(Vector(EMBED_DIM), nullable=False)
         indexed_at = Column(DateTime, default=datetime.utcnow)
+
+    class PredictionVector(Base):
+        __tablename__ = "prediction_vectors"
+
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        prediction_log_id = Column(Integer, index=True, unique=True, nullable=False)
+        embedding = Column(Vector(EMBED_DIM), nullable=False)  # reason 텍스트 임베딩
+        is_correct = Column(Boolean)
+        calibrated_confidence = Column(Float)
+        indexed_at = Column(DateTime, default=datetime.utcnow)
 else:
-    NewsVector = None  # type: ignore[assignment,misc]
+    NewsVector = None       # type: ignore[assignment,misc]
+    PredictionVector = None # type: ignore[assignment,misc]
 
 
 def get_db():
