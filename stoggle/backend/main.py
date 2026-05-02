@@ -1,6 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from dotenv import load_dotenv
 
 from routers import search, insight, news, relations
@@ -27,6 +28,11 @@ app.include_router(search.router, prefix="/api/v1")
 app.include_router(insight.router, prefix="/api/v1")
 app.include_router(news.router, prefix="/api/v1")
 app.include_router(relations.router, prefix="/api/v1")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=200)
 
 
 @app.get("/health", tags=["health"])
