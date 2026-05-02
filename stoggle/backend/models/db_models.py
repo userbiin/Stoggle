@@ -7,14 +7,22 @@ import os
 from datetime import datetime
 from sqlalchemy import (
     create_engine, Column, String, Float, Integer,
-    DateTime, Text, UniqueConstraint,
+    DateTime, Text, UniqueConstraint, event,
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from dotenv import load_dotenv
 
+try:
+    from pgvector.sqlalchemy import Vector
+    PGVECTOR_AVAILABLE = True
+except ImportError:
+    PGVECTOR_AVAILABLE = False
+
+EMBED_DIM = 1536  # text-embedding-3-small
+
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./stoggle.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./Stoogle.db")
 
 engine = create_engine(
     DATABASE_URL,
@@ -87,6 +95,19 @@ class RelationCache(Base):
     __table_args__ = (UniqueConstraint("ticker", "related_ticker", name="uq_relation"),)
 
 
+if PGVECTOR_AVAILABLE:
+    class NewsVector(Base):
+        __tablename__ = "news_vectors"
+
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        news_cache_id = Column(Integer, index=True, nullable=True)
+        url = Column(String(1000), unique=True, nullable=False)
+        embedding = Column(Vector(EMBED_DIM), nullable=False)
+        indexed_at = Column(DateTime, default=datetime.utcnow)
+else:
+    NewsVector = None  # type: ignore[assignment,misc]
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -96,5 +117,9 @@ def get_db():
 
 
 if __name__ == "__main__":
+    if PGVECTOR_AVAILABLE and not DATABASE_URL.startswith("sqlite"):
+        with engine.connect() as conn:
+            conn.execute(__import__("sqlalchemy").text("CREATE EXTENSION IF NOT EXISTS vector"))
+            conn.commit()
     Base.metadata.create_all(bind=engine)
     print("DB 테이블 생성 완료:", DATABASE_URL)

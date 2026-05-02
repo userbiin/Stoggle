@@ -1,7 +1,7 @@
 """
 뉴스 크롤링 + 랭킹 서비스 (네이버 금융 뉴스 기반)
 """
-import asyncio
+import logging
 import re
 from datetime import datetime
 from typing import Optional
@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 
 from models.schemas import NewsItem
 
+logger = logging.getLogger(__name__)
 
 NAVER_NEWS_URL = "https://finance.naver.com/item/news_news.naver"
 HEADERS = {
@@ -22,16 +23,31 @@ HEADERS = {
 }
 
 
-async def fetch_news(ticker: str, page: int = 1) -> list[NewsItem]:
+async def fetch_news(ticker: str, page: int = 1, force: bool = False) -> list[NewsItem]:
     """
-    네이버 금융에서 종목 뉴스 크롤링
+    종목 뉴스 반환. Redis 캐시(1시간) → 네이버 금융 크롤링 순으로 시도.
+
+    crawl_all_news Celery 태스크가 1시간마다 page=1 캐시를 워밍업하므로
+    대부분의 요청은 캐시에서 즉시 반환된다.
+    page > 1 이거나 캐시 미스인 경우에만 실제 크롤링 수행.
+
+    force=True 이면 캐시를 무시하고 항상 크롤링 (crawl_all_news 전용).
     """
+    from services.cache_service import get_news_cache, set_news_cache
+
+    # page=1 이고 강제 갱신이 아닌 경우 캐시 우선 조회
+    if page == 1 and not force:
+        cached = get_news_cache(ticker)
+        if cached:
+            return [NewsItem(**item) for item in cached]
+
     params = {"code": ticker, "page": page}
     try:
         async with httpx.AsyncClient(headers=HEADERS, timeout=10) as client:
             res = await client.get(NAVER_NEWS_URL, params=params)
             res.raise_for_status()
-    except Exception:
+    except Exception as e:
+        logger.warning(f"뉴스 크롤링 실패 ({ticker}, page={page}): {e}")
         return []
 
     soup = BeautifulSoup(res.text, "html.parser")
@@ -63,7 +79,13 @@ async def fetch_news(ticker: str, page: int = 1) -> list[NewsItem]:
             category=_categorize(title),
         ))
 
-    return items[:20]
+    items = items[:20]
+
+    # page=1 크롤링 결과를 캐시에 저장 (다음 요청부터 캐시 hit)
+    if page == 1 and items:
+        set_news_cache(ticker, [i.model_dump() for i in items])
+
+    return items
 
 
 def _parse_date(raw: str) -> str:

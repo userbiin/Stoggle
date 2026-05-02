@@ -9,7 +9,7 @@ router = APIRouter(tags=["relations"])
 async def get_relations(ticker: str):
     ticker = ticker.upper()
     relation_data = compute_relations(ticker)
-    impact = compute_impact(ticker)
+    impact = await compute_impact(ticker)
 
     return RelationsResponse(
         ticker=ticker,

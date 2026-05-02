@@ -1,32 +1,13 @@
 """
 상관계수 기반 연관 기업 관계 도출 서비스
 """
-from datetime import datetime, timedelta
 from typing import Optional
+import logging
 import numpy as np
-
-try:
-    from pykrx import stock as pykrx_stock
-    PYKRX_AVAILABLE = True
-except ImportError:
-    PYKRX_AVAILABLE = False
 
 from models.schemas import RelationNode, RelationLink, RelatedCompany, ImpactItem
 
-
-# 주요 종목 사전 (fallback용)
-MAJOR_TICKERS = {
-    "005930": ("삼성전자", "KOSPI"),
-    "000660": ("SK하이닉스", "KOSPI"),
-    "035420": ("NAVER", "KOSPI"),
-    "051910": ("LG화학", "KOSPI"),
-    "207940": ("삼성바이오로직스", "KOSPI"),
-    "035720": ("카카오", "KOSPI"),
-    "066570": ("LG전자", "KOSPI"),
-    "003550": ("LG", "KOSPI"),
-    "005380": ("현대차", "KOSPI"),
-    "000270": ("기아", "KOSPI"),
-}
+logger = logging.getLogger(__name__)
 
 RELATION_TYPES = {
     (0.8, 1.0): "경쟁",
@@ -43,18 +24,56 @@ def _get_relation_type(corr: float) -> str:
     return "관심"
 
 
-def _fetch_close_prices(ticker: str, days: int = 90) -> Optional[list[float]]:
-    if not PYKRX_AVAILABLE:
-        return None
+def _get_name(ticker: str, registry: dict) -> str:
+    """레지스트리에서 종목명 조회. 없으면 ticker 코드 반환."""
+    return registry.get(ticker, {}).get("name", ticker)
+
+
+def _fetch_close_series(ticker: str, days: int = 90) -> dict[str, float]:
+    """
+    Redis 캐시가 적용된 stock_service를 통해 일자별 종가를 조회한다.
+
+    relation_service가 pykrx를 직접 호출하지 않게 해서 주가 히스토리 캐시 정책을
+    한곳(stock_service/cache_service)에 모은다.
+    """
     try:
-        today = datetime.today().strftime("%Y%m%d")
-        start = (datetime.today() - timedelta(days=days)).strftime("%Y%m%d")
-        df = pykrx_stock.get_market_ohlcv_by_date(start, today, ticker)
-        if df is None or df.empty:
-            return None
-        return df["종가"].tolist()
+        from services.stock_service import get_price_history
+
+        history = get_price_history(ticker, days=days)
+        return {
+            point.date: float(point.close)
+            for point in history
+            if point.close is not None
+        }
+    except Exception as e:
+        logger.warning("종가 시계열 조회 실패 (%s): %s", ticker, e)
+        return {}
+
+
+def _pearson_corr(
+    base_series: dict[str, float],
+    candidate_series: dict[str, float],
+    min_points: int = 20,
+) -> Optional[float]:
+    """두 종목의 공통 거래일 종가 기준 Pearson 상관계수."""
+    common_dates = sorted(set(base_series) & set(candidate_series))
+    if len(common_dates) < min_points:
+        return None
+
+    base = np.array([base_series[d] for d in common_dates], dtype=np.float64)
+    candidate = np.array([candidate_series[d] for d in common_dates], dtype=np.float64)
+
+    if np.std(base) == 0 or np.std(candidate) == 0:
+        return None
+
+    try:
+        corr = float(np.corrcoef(base, candidate)[0, 1])
     except Exception:
         return None
+
+    if np.isnan(corr):
+        return None
+    return corr
 
 
 def compute_relations(
@@ -63,32 +82,39 @@ def compute_relations(
 ) -> dict:
     """
     주어진 ticker와 후보 종목들 간의 상관계수를 계산하여 관계 데이터를 반환.
-    pykrx 미사용 시 사전 정의된 데이터 반환.
-    """
-    if candidate_tickers is None:
-        candidate_tickers = [t for t in MAJOR_TICKERS if t != ticker][:9]
 
-    base_prices = _fetch_close_prices(ticker)
+    candidate_tickers 미지정 시 레지스트리 전종목 중 KOSPI200 기준 상위 9개를 사용.
+    종목명은 Redis 레지스트리에서 동적으로 조회한다.
+    """
+    from services.stock_service import get_or_build_registry
+    from tasks import KOSPI200_TICKERS
+
+    registry = get_or_build_registry()
+
+    if candidate_tickers is None:
+        candidate_tickers = [t for t in KOSPI200_TICKERS if t != ticker][:9]
+
+    base_series = _fetch_close_series(ticker)
 
     nodes = []
     links = []
     related = []
 
-    center_name = MAJOR_TICKERS.get(ticker, (ticker, ""))[0]
+    center_name = _get_name(ticker, registry)
     nodes.append(RelationNode(id=ticker, name=center_name, group=0, size=40))
 
     for i, cand in enumerate(candidate_tickers):
-        cand_name = MAJOR_TICKERS.get(cand, (cand, ""))[0]
+        if cand == ticker:
+            continue
+
+        cand_name = _get_name(cand, registry)
         size = max(10, 28 - i * 2)
 
-        if base_prices is not None:
-            cand_prices = _fetch_close_prices(cand)
-            if cand_prices and len(cand_prices) == len(base_prices):
-                correlation = float(np.corrcoef(base_prices, cand_prices)[0, 1])
-            else:
-                correlation = max(0.1, 0.9 - i * 0.08)
-        else:
-            correlation = max(0.1, 0.9 - i * 0.08)
+        cand_series = _fetch_close_series(cand)
+        correlation = _pearson_corr(base_series, cand_series)
+        if correlation is None:
+            logger.info("상관계수 계산 제외 (%s-%s): 공통 거래일 부족 또는 데이터 없음", ticker, cand)
+            continue
 
         correlation = round(abs(correlation), 2)
         rtype = _get_relation_type(correlation)
@@ -111,19 +137,74 @@ def compute_relations(
     }
 
 
-def compute_impact(ticker: str) -> list[ImpactItem]:
+def compute_correlations_only(ticker: str) -> int:
     """
-    영향 종목 추론 (간단한 섹터 기반 규칙)
+    단일 종목에 대해 KOSPI200 후보 종목들과의 상관계수만 계산한다.
+    관계 유형 재분류·노드 생성 없이 수치만 갱신하므로 매일 실행에 적합.
+    반환값: 상관계수를 계산한 후보 종목 수
     """
-    sector_impacts = {
-        "005930": [
-            ImpactItem(ticker="009150", name="삼성전기", impact="positive", reason="부품 공급망 수혜"),
-            ImpactItem(ticker="028260", name="삼성물산", impact="positive", reason="그룹사 호재 동반 반영"),
-            ImpactItem(ticker="086520", name="에코프로", impact="negative", reason="반도체 투자 확대 → 배터리 자금 이동"),
-        ],
-        "000660": [
-            ImpactItem(ticker="005930", name="삼성전자", impact="negative", reason="메모리 직접 경쟁"),
-            ImpactItem(ticker="006400", name="삼성SDI", impact="neutral", reason="섹터 자금 이동 가능성"),
-        ],
-    }
-    return sector_impacts.get(ticker, [])
+    from tasks import KOSPI200_TICKERS
+
+    candidate_tickers = [t for t in KOSPI200_TICKERS if t != ticker]
+    base_series = _fetch_close_series(ticker)
+    if not base_series:
+        return 0
+
+    count = 0
+    for cand in candidate_tickers:
+        cand_series = _fetch_close_series(cand)
+        if _pearson_corr(base_series, cand_series) is not None:
+            count += 1
+
+    return count
+
+
+async def compute_impact(ticker: str) -> list[ImpactItem]:
+    """
+    영향 종목 추론.
+
+    흐름:
+      1. 해당 종목의 최신 뉴스 수집 (news_service)
+      2. 상관계수 기반 관계사 목록 조회 (compute_relations)
+      3. LLM 에이전트가 뉴스를 읽고 관계사 중 영향받을 종목 판단
+      4. LLM 미사용 환경(API 키 없음)이면 빈 리스트 반환
+    """
+    from services.news_service import fetch_news, rank_news
+    from services.stock_service import get_or_build_registry
+    from agents.news_agent import run_impact_analysis
+
+    registry = get_or_build_registry()
+    company_name = _get_name(ticker, registry)
+
+    # 1. 뉴스 수집
+    news_items = await fetch_news(ticker)
+    ranked = rank_news(news_items)
+    news_titles = [n.title for n in ranked[:10]]
+
+    # 2. 관계사 목록 확보
+    relation_data = compute_relations(ticker)
+    related = [
+        {"ticker": r.ticker, "name": r.name, "reason": r.reason}
+        for r in relation_data.get("related_companies", [])
+    ]
+
+    if not news_titles or not related:
+        return []
+
+    # 3. LLM 에이전트 호출
+    raw_items = await run_impact_analysis(
+        ticker=ticker,
+        company_name=company_name,
+        news_titles=news_titles,
+        related_companies=related,
+    )
+
+    return [
+        ImpactItem(
+            ticker=item["ticker"],
+            name=item["name"],
+            impact=item["impact"],
+            reason=item["reason"],
+        )
+        for item in raw_items
+    ]

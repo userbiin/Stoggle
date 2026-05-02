@@ -9,8 +9,8 @@ from routers import search, insight, news, relations
 load_dotenv()
 
 app = FastAPI(
-    title="Stoggle API",
-    description="주식 종목 인사이트 플랫폼 백엔드!",
+    title="Stoogle API",
+    description="주식 종목 인사이트 플랫폼 백엔드",
     version="0.1.0",
 )
 
