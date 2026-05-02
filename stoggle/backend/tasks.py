@@ -73,6 +73,11 @@ app.conf.beat_schedule = {
         "task": "tasks.calibrate_predictions",
         "schedule": crontab(hour=2, minute=0),
     },
+    # DART 공시·재무제표 색인 (매일 오후 6시)
+    "index-dart-daily": {
+        "task": "tasks.index_dart_disclosures",
+        "schedule": crontab(hour=18, minute=0),
+    },
 }
 
 # KOSPI 200 구성 종목 — pykrx로 동적 조회, 실패 시 아래 fallback 사용
@@ -348,6 +353,7 @@ def update_relation_graphs(self):
     return {"status": "ok", "updated": results}
 
 
+<<<<<<< HEAD
 # ─────────────────────────────────────────────────────────────────────────────
 # 보정 태스크
 # ─────────────────────────────────────────────────────────────────────────────
@@ -374,6 +380,25 @@ def calibrate_predictions(self):
 # 온디맨드 태스크
 # ─────────────────────────────────────────────────────────────────────────────
 
+=======
+@app.task(bind=True, max_retries=3, default_retry_delay=120)
+def index_dart_disclosures(self):
+    """주요 종목 DART 공시·재무제표 pgvector 색인 (매일 18:00)"""
+    from agents.dart_indexer import run as dart_run
+
+    results = {}
+    for ticker in MAJOR_TICKERS:
+        try:
+            count = asyncio.run(dart_run(ticker))
+            results[ticker] = count
+        except Exception as e:
+            logger.error("[%s] DART 색인 실패: %s", ticker, e)
+            self.retry(exc=e)
+
+    return {"indexed": results}
+
+
+>>>>>>> origin/feat/2
 @app.task
 def analyze_single_ticker(ticker: str):
     """단일 종목 인사이트 갱신 (사용자 검색 시 온디맨드 트리거)"""

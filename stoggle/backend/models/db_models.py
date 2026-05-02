@@ -149,9 +149,29 @@ if PGVECTOR_AVAILABLE:
         is_correct = Column(Boolean)
         calibrated_confidence = Column(Float)
         indexed_at = Column(DateTime, default=datetime.utcnow)
+
+    class DartChunk(Base):
+        __tablename__ = "dart_chunks"
+
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        ticker = Column(String(10), index=True, nullable=False)
+        corp_code = Column(String(8))
+        rcept_no = Column(String(14), index=True)   # DART 접수번호
+        report_nm = Column(String(200))              # 보고서명
+        section_title = Column(String(200))          # 섹션 제목
+        chunk_index = Column(Integer, default=0)     # 섹션 내 청크 순서
+        content = Column(Text)
+        token_count = Column(Integer)
+        embedding = Column(Vector(EMBED_DIM), nullable=False)
+        indexed_at = Column(DateTime, default=datetime.utcnow)
+
+        __table_args__ = (
+            UniqueConstraint("rcept_no", "section_title", "chunk_index", name="uq_dart_chunk"),
+        )
 else:
-    NewsVector = None       # type: ignore[assignment,misc]
-    PredictionVector = None # type: ignore[assignment,misc]
+    NewsVector = None        # type: ignore[assignment,misc]
+    PredictionVector = None  # type: ignore[assignment,misc]
+    DartChunk = None         # type: ignore[assignment,misc]
 
 
 def get_db():
