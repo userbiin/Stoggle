@@ -95,6 +95,21 @@ class RelationCache(Base):
     __table_args__ = (UniqueConstraint("ticker", "related_ticker", name="uq_relation"),)
 
 
+class DartAnalysis(Base):
+    __tablename__ = "dart_analysis"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(10), index=True, nullable=False)
+    filed_at = Column(String(10))       # YYYY-MM-DD, nullable
+    revenue = Column(Float)             # 매출액 (억원)
+    op_profit = Column(Float)           # 영업이익 (억원)
+    capex = Column(Float)               # 설비투자 (억원)
+    inventory = Column(Float)           # 재고자산 (억원)
+    insight = Column(Text)
+    text_hash = Column(String(64), unique=True, nullable=False, index=True)
+    analyzed_at = Column(DateTime, default=datetime.utcnow)
+
+
 if PGVECTOR_AVAILABLE:
     class NewsVector(Base):
         __tablename__ = "news_vectors"
