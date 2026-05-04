@@ -25,6 +25,8 @@ npm run build        # Production build
 
 ### Backend (from `stoggle/backend/`)
 ```bash
+# A pre-installed .venv exists at the repo root — activate it first
+source /workspaces/Stoggle/.venv/bin/activate
 pip install -r requirements.txt
 python models/db_models.py                    # Create/init DB tables
 uvicorn main:app --reload --port 8000         # Dev server (Swagger at /docs)
@@ -65,14 +67,19 @@ There are currently **no tests** and **no linting configs**. The project has no 
   - `nlp_service.py`: Korean keyword extraction (KoNLPy Okt, regex fallback) + CLAUDE summarization
   - `relation_service.py`: Pearson correlation between stock price series
   - `cache_service.py`: Redis key/value caching with TTLs (ticker registry, prices, news)
-- `models/db_models.py`: SQLAlchemy ORM (Company, PriceHistory, NewsCache, InsightCache, RelationCache, NewsVector)
+- `models/db_models.py`: SQLAlchemy ORM (Company, PriceHistory, NewsCache, InsightCache, RelationCache, DartAnalysis, PredictionLog); pgvector-only tables (NewsVector, PredictionVector, DartChunk) are defined conditionally when `DATABASE_URL` points to PostgreSQL
 - `models/schemas.py`: Pydantic v2 response models
 - `agents/` — LLM-based agents
   - `news_agent.py`: LangChain news analysis (gpt-4o-mini)
   - `summary_agent.py`: LangChain news summarization
-  - `relevance_agent.py`: EXAONE API relevance scoring
-  - `dedup_indexer.py`: pgvector-based news deduplication
-- `tasks.py`: Celery Beat schedule (8 tasks):
+  - `relevance_agent.py`: EXAONE API relevance scoring (or local Ollama `exaone3.5:7.8b`)
+  - `dedup_indexer.py`: pgvector-based news deduplication; defines the shared `Article` dataclass
+  - `naver_news_crawler.py`: Naver News API crawler (uses `NAVER_CLIENT_ID`/`NAVER_CLIENT_SECRET`)
+  - `analysis_agent.py`: unified ticker analysis — single GPT-4o structured-output call producing `AnalysisResult {events, relations, summary, sentiment, impacts, evidence}`; boosts context with pgvector cosine search over past articles; saves to `InsightCache`
+  - `dart_analyzer.py`: extracts key financials (revenue, op_profit, capex, inventory) from raw DART disclosure text via GPT-4o structured output; saves to `DartAnalysis` table
+  - `dart_indexer.py`: downloads DART corp-code XML + filings, splits into ≤400-token chunks, indexes into `DartChunk` pgvector table
+  - `calibrator.py`: evaluates D+3 prediction accuracy and re-calibrates confidence scores via Isotonic Regression; embeds `reason` text into `PredictionVector`
+- `tasks.py`: Celery Beat schedule (10 tasks, `Asia/Seoul` timezone):
 
 | Task | Schedule | Description |
 |---|---|---|
@@ -84,6 +91,8 @@ There are currently **no tests** and **no linting configs**. The project has no 
 | `recompute_correlations` | daily 00:00 | Pearson correlation for all KOSPI200 pairs |
 | `update_relation_graphs` | Mon 09:00 | Full relation type reclassification (correlation + DART) |
 | `refresh_ticker_registry` | Mon 07:00 | KRX full ticker list → Redis (before market open) |
+| `calibrate_predictions` | daily 02:00 | Evaluate D+3 prediction accuracy + re-calibrate confidence |
+| `index_dart_disclosures` | daily 18:00 | DART filings + financials → pgvector index |
 
   Also exposes `analyze_single_ticker(ticker)` as an on-demand task triggered when a user searches.
 
@@ -116,6 +125,7 @@ There are currently **no tests** and **no linting configs**. The project has no 
 ## Environment Variables
 
 See `Stoogle/backend/.env.example`. Key variables: `CLAUDE_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `DART_API_KEY`.
+| *(Ollama)* | Local LLM alternative — run `ollama pull exaone3.5:7.8b` after installing Ollama | No |
 
 ## Git Workflow
 
