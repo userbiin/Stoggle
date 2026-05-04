@@ -1,4 +1,4 @@
-# Stoggle — 주식 종목 인사이트 플랫폼
+# Stoogle — 주식 종목 인사이트 플랫폼
 
 최종 update : 2026-04-30
 
@@ -22,7 +22,7 @@
 - Redis 기반 종목 레지스트리/현재가/주가 히스토리/뉴스 캐싱 구현
 - Pearson 상관계수 기반 기업 관계 도출 및 D3 관계 그래프 구현
 - 네이버 금융 뉴스 크롤링 및 간단 감성/카테고리 분류 구현
-- OpenAI API 기반 요약/영향 종목 추론 구현, API 키 없을 때 fallback 처리
+- CLAUDE API 기반 요약/영향 종목 추론 구현, API 키 없을 때 fallback 처리
 - Redis 캐시 서비스와 Celery 자동화 태스크 골격 구현
 - SQLAlchemy ORM 모델과 pgvector 뉴스 벡터 모델 정의 완료
 

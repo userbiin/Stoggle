@@ -75,15 +75,15 @@ def _quality_score(body: str) -> float:
 
 
 async def _summarize(body: str) -> Optional[str]:
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("CLAUDE_API_KEY")
     if not api_key:
         return None
 
     try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=api_key)
+        from CLAUDE import AsyncCLAUDE
+        client = AsyncCLAUDE(api_key=api_key)
         response = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="claude-ai",
             messages=[
                 {
                     "role": "system",
@@ -99,7 +99,7 @@ async def _summarize(body: str) -> Optional[str]:
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        logger.error("OpenAI 요약 실패: %s", e)
+        logger.error("CLAUDE 요약 실패: %s", e)
         return None
 
 

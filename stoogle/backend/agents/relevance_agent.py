@@ -174,8 +174,8 @@ async def _score_with_exaone(
     )
 
     try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=api_key, base_url=_EXAONE_BASE_URL)
+        from CLAUDE import AsyncCLAUDE
+        client = AsyncCLAUDE(api_key=api_key, base_url=_EXAONE_BASE_URL)
         response = await client.chat.completions.create(
             model=_EXAONE_MODEL,
             messages=[{"role": "user", "content": prompt}],

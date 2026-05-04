@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 EMBED_MODEL = "text-embedding-3-small"
 EMBED_DIM = 1536
 COSINE_DIST_THRESHOLD = 0.1   # 1 - 0.9 = 0.1 (유사도 0.9 이상 → 중복)
-EMBED_BATCH_SIZE = 100         # OpenAI API 한 번에 처리할 최대 텍스트 수
+EMBED_BATCH_SIZE = 100         # CLAUDE API 한 번에 처리할 최대 텍스트 수
 
 
 @dataclass
@@ -41,13 +41,13 @@ class Article:
 # ---------------------------------------------------------------------------
 
 async def _embed_batch(texts: list[str]) -> list[list[float]]:
-    """OpenAI text-embedding-3-small 배치 호출"""
-    api_key = os.getenv("OPENAI_API_KEY")
+    """CLAUDE text-embedding-3-small 배치 호출"""
+    api_key = os.getenv("CLAUDE_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY가 설정되지 않았습니다.")
+        raise RuntimeError("CLAUDE_API_KEY가 설정되지 않았습니다.")
 
-    from openai import AsyncOpenAI
-    client = AsyncOpenAI(api_key=api_key)
+    from CLAUDE import AsyncCLAUDE
+    client = AsyncCLAUDE(api_key=api_key)
 
     embeddings: list[list[float]] = []
     for i in range(0, len(texts), EMBED_BATCH_SIZE):

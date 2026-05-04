@@ -10,11 +10,11 @@ import os
 from typing import Optional
 
 try:
-    from langchain_openai import ChatOpenAI
-    from langchain.agents import AgentExecutor, create_openai_functions_agent
+    from langchain_CLAUDE import ChatCLAUDE
+    from langchain.agents import AgentExecutor, create_CLAUDE_functions_agent
     from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
     from langchain.tools import tool
-    from openai import AsyncOpenAI
+    from CLAUDE import AsyncCLAUDE
     LANGCHAIN_AVAILABLE = True
 except ImportError:
     LANGCHAIN_AVAILABLE = False
@@ -66,15 +66,15 @@ def analyze_sentiment(text: str) -> str:
 def build_news_agent() -> Optional[object]:
     """
     LangChain 뉴스 에이전트 생성.
-    OPENAI_API_KEY 미설정 시 None 반환.
+    CLAUDE_API_KEY 미설정 시 None 반환.
     """
-    if not LANGCHAIN_AVAILABLE or not os.getenv("OPENAI_API_KEY"):
+    if not LANGCHAIN_AVAILABLE or not os.getenv("CLAUDE_API_KEY"):
         return None
 
-    llm = ChatOpenAI(
-        model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+    llm = ChatCLAUDE(
+        model=os.getenv("LLM_MODEL", "claude-ai"),
         temperature=0,
-        api_key=os.getenv("OPENAI_API_KEY"),
+        api_key=os.getenv("CLAUDE_API_KEY"),
     )
 
     tools = [fetch_stock_news, analyze_sentiment]
@@ -89,7 +89,7 @@ def build_news_agent() -> Optional[object]:
         MessagesPlaceholder(variable_name="agent_scratchpad"),
     ])
 
-    agent = create_openai_functions_agent(llm, tools, prompt)
+    agent = create_CLAUDE_functions_agent(llm, tools, prompt)
     return AgentExecutor(agent=agent, tools=tools, verbose=True, max_iterations=3)
 
 
@@ -156,7 +156,7 @@ async def run_impact_analysis(
     [{"ticker": ..., "name": ..., "impact": "positive|negative", "reason": ...}, ...]
     빈 리스트를 반환해도 안전하다 (fallback).
     """
-    if not LANGCHAIN_AVAILABLE or not os.getenv("OPENAI_API_KEY"):
+    if not LANGCHAIN_AVAILABLE or not os.getenv("CLAUDE_API_KEY"):
         return []
 
     if not news_titles or not related_companies:
@@ -176,9 +176,9 @@ async def run_impact_analysis(
     )
 
     try:
-        client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        client = AsyncCLAUDE(api_key=os.getenv("CLAUDE_API_KEY"))
         response = await client.chat.completions.create(
-            model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+            model=os.getenv("LLM_MODEL", "claude-ai"),
             temperature=0,
             response_format={"type": "json_object"},
             messages=[
