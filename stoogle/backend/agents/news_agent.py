@@ -10,14 +10,16 @@ import os
 from typing import Optional
 
 try:
-    from langchain_CLAUDE import ChatCLAUDE
-    from langchain.agents import AgentExecutor, create_CLAUDE_functions_agent
+    from langchain_anthropic import ChatAnthropic
+    from langchain.agents import AgentExecutor, create_openai_tools_agent
     from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
     from langchain.tools import tool
-    from CLAUDE import AsyncCLAUDE
+    from anthropic import AsyncAnthropic
     LANGCHAIN_AVAILABLE = True
 except ImportError:
     LANGCHAIN_AVAILABLE = False
+    def tool(f):
+        return f
 
 from services.news_service import fetch_news, rank_news
 import asyncio
@@ -68,13 +70,13 @@ def build_news_agent() -> Optional[object]:
     LangChain 뉴스 에이전트 생성.
     CLAUDE_API_KEY 미설정 시 None 반환.
     """
-    if not LANGCHAIN_AVAILABLE or not os.getenv("CLAUDE_API_KEY"):
+    if not LANGCHAIN_AVAILABLE or not os.getenv("ANTHROPIC_API_KEY"):
         return None
 
-    llm = ChatCLAUDE(
-        model=os.getenv("LLM_MODEL", "claude-ai"),
+    llm = ChatAnthropic(
+        model=os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001"),
         temperature=0,
-        api_key=os.getenv("CLAUDE_API_KEY"),
+        api_key=os.getenv("ANTHROPIC_API_KEY"),
     )
 
     tools = [fetch_stock_news, analyze_sentiment]
@@ -89,7 +91,7 @@ def build_news_agent() -> Optional[object]:
         MessagesPlaceholder(variable_name="agent_scratchpad"),
     ])
 
-    agent = create_CLAUDE_functions_agent(llm, tools, prompt)
+    agent = create_openai_tools_agent(llm, tools, prompt)
     return AgentExecutor(agent=agent, tools=tools, verbose=True, max_iterations=3)
 
 
@@ -156,7 +158,7 @@ async def run_impact_analysis(
     [{"ticker": ..., "name": ..., "impact": "positive|negative", "reason": ...}, ...]
     빈 리스트를 반환해도 안전하다 (fallback).
     """
-    if not LANGCHAIN_AVAILABLE or not os.getenv("CLAUDE_API_KEY"):
+    if not LANGCHAIN_AVAILABLE or not os.getenv("ANTHROPIC_API_KEY"):
         return []
 
     if not news_titles or not related_companies:
@@ -176,18 +178,15 @@ async def run_impact_analysis(
     )
 
     try:
-        client = AsyncCLAUDE(api_key=os.getenv("CLAUDE_API_KEY"))
-        response = await client.chat.completions.create(
-            model=os.getenv("LLM_MODEL", "claude-ai"),
+        client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        response = await client.messages.create(
+            model=os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001"),
+            system=_IMPACT_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
             temperature=0,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": _IMPACT_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
             max_tokens=600,
         )
-        raw = response.choices[0].message.content.strip()
+        raw = response.content[0].text.strip()
 
         # JSON 파싱 — 최상위가 배열이거나 {"impacts": [...]} 형태 모두 처리
         parsed = json.loads(raw)

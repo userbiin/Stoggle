@@ -75,20 +75,17 @@ def _quality_score(body: str) -> float:
 
 
 async def _summarize(body: str) -> Optional[str]:
-    api_key = os.getenv("CLAUDE_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return None
 
     try:
-        from CLAUDE import AsyncCLAUDE
-        client = AsyncCLAUDE(api_key=api_key)
-        response = await client.chat.completions.create(
-            model="claude-ai",
+        from anthropic import AsyncAnthropic
+        client = AsyncAnthropic(api_key=api_key)
+        response = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            system="당신은 뉴스 편집자입니다. 주어진 기사 본문을 3문장으로 요약하세요. 핵심 사실만 담고, 의견이나 추측은 제외하세요.",
             messages=[
-                {
-                    "role": "system",
-                    "content": "당신은 뉴스 편집자입니다. 주어진 기사 본문을 3문장으로 요약하세요. 핵심 사실만 담고, 의견이나 추측은 제외하세요.",
-                },
                 {
                     "role": "user",
                     "content": f"다음 기사를 3문장으로 요약해주세요:\n\n{body[:3000]}",
@@ -97,9 +94,9 @@ async def _summarize(body: str) -> Optional[str]:
             temperature=0.2,
             max_tokens=300,
         )
-        return response.choices[0].message.content.strip()
+        return response.content[0].text.strip()
     except Exception as e:
-        logger.error("CLAUDE 요약 실패: %s", e)
+        logger.error("Anthropic 요약 실패: %s", e)
         return None
 
 
