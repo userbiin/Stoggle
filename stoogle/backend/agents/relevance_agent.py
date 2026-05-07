@@ -24,10 +24,11 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# EXAONE API 설정
-_EXAONE_BASE_URL = os.getenv("EXAONE_BASE_URL", "https://api.exaone.lgai.ai/v1")
-_EXAONE_MODEL = os.getenv("EXAONE_MODEL", "EXAONE-3.5-7.8B-Instruct")
-_EXAONE_CONCURRENCY = 5   # 동시 API 호출 수 제한
+# Ollama API 설정
+_base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+_OLLAMA_BASE_URL = _base if _base.endswith("/v1") else f"{_base}/v1"
+_OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "exaone3.5:7.8b")
+_OLLAMA_CONCURRENCY = 5   # 동시 API 호출 수 제한
 _SCORE_THRESHOLD = 4       # 이 점수 미만은 폐기
 
 # ---------------------------------------------------------------------------
@@ -134,18 +135,12 @@ def _prefilter(article: Article, keywords: list[str]) -> bool:
 # 2단계: EXAONE 3.5 문맥 판별
 # ---------------------------------------------------------------------------
 
-@track_llm_call("relevance")
-async def _score_with_exaone(
+async def _score_with_ollama(
     ticker: str,
     company_name: str,
     article: Article,
 ) -> int:
-    """EXAONE 3.5로 기사 관련도 점수 반환 (0~5). API 실패 시 0 반환."""
-    api_key = os.getenv("EXAONE_API_KEY")
-    if not api_key:
-        logger.warning("EXAONE_API_KEY 미설정 — 스코어 0 반환")
-        return 0
-
+    """Ollama EXAONE로 기사 관련도 점수 반환 (0~5). API 실패 시 0 반환."""
     prompt = (
         f"다음 기사가 {company_name}({ticker}) 종목과 얼마나 관련 있는지 평가하세요.\n\n"
         f"제목: {article.title}\n"
@@ -162,9 +157,9 @@ async def _score_with_exaone(
 
     try:
         from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=api_key, base_url=_EXAONE_BASE_URL)
+        client = AsyncOpenAI(api_key="ollama", base_url=_OLLAMA_BASE_URL)
         response = await client.chat.completions.create(
-            model=_EXAONE_MODEL,
+            model=_OLLAMA_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             max_tokens=5,
@@ -172,11 +167,11 @@ async def _score_with_exaone(
         raw = response.choices[0].message.content.strip()
         match = re.search(r"[0-5]", raw)
         if not match:
-            logger.warning("EXAONE 응답 파싱 실패: %r", raw)
+            logger.warning("Ollama 응답 파싱 실패: %r", raw)
             return 0
         return int(match.group())
     except Exception as e:
-        logger.error("EXAONE API 호출 실패 [%s]: %s", article.url, e)
+        logger.error("Ollama API 호출 실패 [%s]: %s", article.url, e)
         return 0
 
 
@@ -187,7 +182,7 @@ async def _score_with_semaphore(
     article: Article,
 ) -> tuple[Article, int]:
     async with sem:
-        score = await _score_with_exaone(ticker, company_name, article)
+        score = await _score_with_ollama(ticker, company_name, article)
         return (article, score)
 
 
@@ -220,8 +215,8 @@ async def run(ticker: str, articles: list[Article]) -> list[ScoredArticle]:
     if not candidates:
         return []
 
-    # 2단계: EXAONE 병렬 스코어링
-    sem = asyncio.Semaphore(_EXAONE_CONCURRENCY)
+    # 2단계: Ollama 병렬 스코어링
+    sem = asyncio.Semaphore(_OLLAMA_CONCURRENCY)
     tasks = [_score_with_semaphore(sem, ticker, company_name, a) for a in candidates]
     scored_pairs = await asyncio.gather(*tasks)
 
@@ -233,7 +228,7 @@ async def run(ticker: str, articles: list[Article]) -> list[ScoredArticle]:
     results.sort(key=lambda x: x.score, reverse=True)
 
     logger.info(
-        "2단계 EXAONE 필터: %d → %d건 (4점 이상)",
+        "2단계 Ollama 필터: %d → %d건 (4점 이상)",
         len(candidates),
         len(results),
     )

@@ -25,7 +25,8 @@ npm run build        # Production build
 
 ### Backend (from `stoggle/backend/`)
 ```bash
-# A pre-installed .venv exists at the repo root — activate it first
+# Use .venv (Python 3.12, full stack). There is also a venv/ at the repo root
+# (Python 3.14, fastapi-only stub) — do NOT use that one for backend work.
 source /workspaces/Stoggle/.venv/bin/activate
 pip install -r requirements.txt
 python models/db_models.py                    # Create/init DB tables
@@ -68,12 +69,12 @@ There are currently **no tests** and **no linting configs**. The project has no 
   - `relation_service.py`: Pearson correlation between stock price series
   - `cache_service.py`: Redis key/value caching with TTLs (ticker registry, prices, news)
 - `models/db_models.py`: SQLAlchemy ORM (Company, PriceHistory, NewsCache, InsightCache, RelationCache, DartAnalysis, PredictionLog); pgvector-only tables (NewsVector, PredictionVector, DartChunk) are defined conditionally when `DATABASE_URL` points to PostgreSQL
-- `models/schemas.py`: Pydantic v2 response models
+- `models/schemas.py`: Pydantic v2 response models. Key shape: `InsightResponse` is a flat model (`ticker`, `name`, `market`, `sector`, `price`, `change`, `change_amount`, `market_cap`, `per`, `pbr`, `eps`, `summary`, `keywords: list[Keyword]`, `price_history: list[PricePoint]`). `RelationsResponse` carries `nodes`, `links`, `related_companies`, and `impact` separately.
 - `agents/` — LLM-based agents
   - `news_agent.py`: LangChain news analysis (gpt-4o-mini)
   - `summary_agent.py`: LangChain news summarization
-  - `relevance_agent.py`: EXAONE API relevance scoring (or local Ollama `exaone3.5:7.8b`)
-  - `dedup_indexer.py`: pgvector-based news deduplication; defines the shared `Article` dataclass
+  - `relevance_agent.py`: two-stage relevance filter — rule-based prefilter then Ollama scoring via OpenAI-compatible endpoint (`OLLAMA_BASE_URL`/`OLLAMA_MODEL`); `EXAONE_API_KEY` in `.env.example` is not wired into the current code. Also defines its own `Article` dataclass (identical fields to `dedup_indexer.Article`) — `analysis_agent.py` imports the authoritative one from `dedup_indexer`.
+  - `dedup_indexer.py`: pgvector-based news deduplication; defines the shared `Article` dataclass (not yet wired to any Celery task — populates `NewsVector` on-demand only)
   - `naver_news_crawler.py`: Naver News API crawler (uses `NAVER_CLIENT_ID`/`NAVER_CLIENT_SECRET`)
   - `analysis_agent.py`: unified ticker analysis — single GPT-4o structured-output call producing `AnalysisResult {events, relations, summary, sentiment, impacts, evidence}`; boosts context with pgvector cosine search over past articles; saves to `InsightCache`
   - `dart_analyzer.py`: extracts key financials (revenue, op_profit, capex, inventory) from raw DART disclosure text via GPT-4o structured output; saves to `DartAnalysis` table
@@ -94,7 +95,7 @@ There are currently **no tests** and **no linting configs**. The project has no 
 | `calibrate_predictions` | daily 02:00 | Evaluate D+3 prediction accuracy + re-calibrate confidence |
 | `index_dart_disclosures` | daily 18:00 | DART filings + financials → pgvector index |
 
-  Also exposes `analyze_single_ticker(ticker)` as an on-demand task triggered when a user searches.
+  Also defines `analyze_single_ticker(ticker)` as an on-demand Celery task. It is **not yet wired into any route** — integration into `insight.py` is pending.
 
 **Cache pattern:** DB cache tables (NewsCache, InsightCache, RelationCache) are populated exclusively by Celery tasks. `cache_service.py` handles Redis hot-path caching (ticker registry TTL 7d, prices TTL 60s). API routes fetch live from pykrx/Naver/OpenAI.
 
@@ -103,7 +104,7 @@ There are currently **no tests** and **no linting configs**. The project has no 
 - Routes: `/` (MainPage), `/search?q=` (SearchResultsPage), `/company/:ticker` (CompanyDetailPage)
 - `utils/mockData.js` provides mock data; `REACT_APP_USE_MOCK` defaults to `true`, so the frontend runs in mock mode unless you explicitly set it to `false`
 - API proxy configured to `http://localhost:8000` in package.json
-- Styles: CSS Modules (`.module.css` per component) + CSS variables in `styles/global.css` (e.g. `--color-brand: #534AB7`); no inline style objects, no CSS-in-JS
+- Styles: single `styles/global.css` with plain class names + CSS variables (e.g. `--color-brand: #534AB7`); no inline style objects, no CSS-in-JS
 
 ## Key Design Decisions
 
@@ -119,13 +120,29 @@ There are currently **no tests** and **no linting configs**. The project has no 
 
 - **No hardcoded company names** in code — all service functions take only `ticker: str`; `refresh_ticker_registry` handles registration
 - **No hardcoded colors** — always use CSS variables; new tokens go in `styles/global.css`
-- **CSS Modules only** — all component styles in `.module.css` files
+- **No inline styles** — all styles go in `styles/global.css` using CSS variables; no style objects, no CSS-in-JS
 - **mockData first** — when adding a new feature, add sample data to `utils/mockData.js` before connecting to the real API
 
 ## Environment Variables
 
-See `Stoogle/backend/.env.example`. Key variables: `CLAUDE_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `DART_API_KEY`.
-| *(Ollama)* | Local LLM alternative — run `ollama pull exaone3.5:7.8b` after installing Ollama | No |
+See `stoggle/backend/.env.example`. Key variables:
+
+| Variable | Purpose | Required |
+|---|---|---|
+| `OPENAI_API_KEY` | LLM summaries | No (falls back to heuristic) |
+| `DATABASE_URL` | PostgreSQL connection | No (falls back to SQLite) |
+| `REDIS_URL` | Celery broker | No (defaults to `redis://localhost:6379/0`) |
+| `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | Naver News API | No (news fetch fails gracefully) |
+| `ALLOWED_ORIGINS` | CORS allowed origins | No (defaults to `http://localhost:3000`) |
+| `DART_API_KEY` | DART filings API (opendart.fss.or.kr) | No (task skips gracefully) |
+| `EXAONE_API_KEY` | Listed in `.env.example` but not used in current code | — |
+| `OLLAMA_BASE_URL` | Ollama server for relevance scoring (default: `http://localhost:11434`) | No (relevance_agent skips gracefully) |
+| `OLLAMA_MODEL` | Ollama model name (default: `exaone3.5:7.8b`) — run `ollama pull exaone3.5:7.8b` | No |
+| `LLM_MODEL` | OpenAI model for analysis_agent (default: `gpt-4o-mini`) | No |
+
+## Other Context Files
+
+`stoggle/CLAUDE_CONTEXT.md` is a Korean-language architecture document written during early planning. Its API response schemas and Celery schedules are partially outdated — treat this file as historical reference, not ground truth. The schemas in `models/schemas.py` and the task table above are authoritative.
 
 ## Git Workflow
 
