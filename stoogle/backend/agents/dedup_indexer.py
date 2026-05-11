@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 EMBED_MODEL = "text-embedding-3-small"
 EMBED_DIM = 1536
 COSINE_DIST_THRESHOLD = 0.1   # 1 - 0.9 = 0.1 (유사도 0.9 이상 → 중복)
-EMBED_BATCH_SIZE = 100         # OpenAI API 한 번에 처리할 최대 텍스트 수
+EMBED_BATCH_SIZE = 100         # 한 번에 처리할 최대 텍스트 수
 
 
 @dataclass
@@ -44,7 +44,7 @@ async def _embed_batch(texts: list[str]) -> list[list[float]]:
     """OpenAI text-embedding-3-small 배치 호출"""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY가 설정되지 않았습니다.")
+        raise RuntimeError("API_KEY가 설정되지 않았습니다.")
 
     from openai import AsyncOpenAI
     client = AsyncOpenAI(api_key=api_key)
@@ -195,9 +195,9 @@ if __name__ == "__main__":
     import asyncio
 
     sample = [
-        Article(url="https://example.com/1", title="삼성전자 반도체 실적 호조", summary="3분기 영업이익 증가"),
-        Article(url="https://example.com/2", title="삼성전자 반도체 실적 호조", summary="3분기 영업이익 증가"),  # 완전 중복
-        Article(url="https://example.com/3", title="SK하이닉스 HBM 수출 확대", summary="AI 수요 증가로 매출 상승"),
+        Article(url="https://example.com/1", title="반도체 실적 호조", summary="3분기 영업이익 증가"),
+        Article(url="https://example.com/2", title="반도체 실적 호조", summary="3분기 영업이익 증가"),  # 완전 중복
+        Article(url="https://example.com/3", title="HBM 수출 확대", summary="AI 수요 증가로 매출 상승"),
     ]
 
     result = asyncio.run(run(sample))

@@ -1,16 +1,16 @@
 ## 작업 내용
 
 ### 프로젝트 명칭 정리
-- `Stoggle` 표기를 `Stoogle`로 전면 수정
+- `Stoogle` 표기를 `Stoogle`로 전면 수정
 - 프론트 문구, HTML 타이틀, 문서/컨텍스트 파일의 프로젝트명 정리
 
 ### Redis cache 연결
 - Redis 기반 캐싱 계층 정리
 - 캐시 키 구조:
-  - `stoogle:registry` / `stoggle:registry`: 종목 레지스트리
-  - `stoogle:price:{ticker}` / `stoggle:price:{ticker}`: 현재가
-  - `stoogle:history:{ticker}` / `stoggle:history:{ticker}`: 주가 히스토리
-  - `stoogle:news:{ticker}` / `stoggle:news:{ticker}`: 뉴스 목록
+  - `stoogle:registry` / `Stoogle:registry`: 종목 레지스트리
+  - `stoogle:price:{ticker}` / `Stoogle:price:{ticker}`: 현재가
+  - `stoogle:history:{ticker}` / `Stoogle:history:{ticker}`: 주가 히스토리
+  - `stoogle:news:{ticker}` / `Stoogle:news:{ticker}`: 뉴스 목록
 - Redis 미실행 시에도 API 실패 없이 외부 데이터 소스로 fallback 유지
 - Redis Docker 실행 후 검색/뉴스/주가/히스토리 캐시 키 생성 확인
 
@@ -52,8 +52,8 @@ closes #
 
 ## 테스트 / 확인 사항
 
-- [x] `python -m compileall stoggle/backend`
-- [x] Redis Docker 실행 후 `stoggle:*` 캐시 키 생성 확인
+- [x] `python -m compileall Stoogle/backend`
+- [x] Redis Docker 실행 후 `Stoogle:*` 캐시 키 생성 확인
 - [x] `/api/v1/search?q=카카오` 200 OK
 - [x] `/api/v1/search?q=SK하이닉스` 200 OK
 - [x] `/api/v1/news/{ticker}` 200 OK
@@ -66,7 +66,7 @@ closes #
 - [x] 로컬에서 백엔드 API 동작 확인
 - [x] Redis cache 연결 확인
 - [x] 기존 검색/뉴스/관계/인사이트 API 500 오류 수정
-- [ ] OpenAI/EXAONE/DART API key 입력 후 LLM/DART 파이프라인 검증
+- [ ] CLAUDE/EXAONE/DART API key 입력 후 LLM/DART 파이프라인 검증
 - [ ] PostgreSQL/Supabase 영구 저장 플로우 E2E 검증
 
 ## 참고 사항

@@ -36,7 +36,7 @@
 ### 백엔드
 - **FastAPI** + Uvicorn
 - **pykrx** — KRX 전종목 주가 수집 (한국 주식)
-- **LangChain + GPT-4o-mini** — 뉴스 요약, 기업 관계 추출
+- **LangChain + claude-ai** — 뉴스 요약, 기업 관계 추출
 - **Celery + Redis** — 자동 스케줄링 (주가 1분, 뉴스 30분, 공시 1일)
 - **SQLAlchemy** — ORM (PostgreSQL / SQLite)
 - **DART OpenAPI** — 공시 데이터
@@ -223,7 +223,7 @@ celery -A tasks beat --loglevel=info
 ## 환경변수 (.env)
 
 ```
-OPENAI_API_KEY=...        # LLM 요약·관계 추출
+CLAUDE_API_KEY=...        # LLM 요약·관계 추출
 DART_API_KEY=...          # https://opendart.fss.or.kr 발급
 DATABASE_URL=postgresql://user:password@localhost:5432/Stoogle
 REDIS_URL=redis://localhost:6379/0
@@ -244,7 +244,7 @@ ALLOWED_ORIGINS=http://localhost:3000
 - [x] LangChain 에이전트 구현
 - [ ] 실데이터 연결 테스트 (pykrx ↔ 프론트 차트)
 - [ ] DART API 키 연동 테스트
-- [ ] OpenAI API 요약 기능 테스트
+- [ ] CLAUDE API 요약 기능 테스트
 - [ ] D3 그래프 실데이터 렌더링 확인
 - [ ] Celery 워커 실행 및 스케줄 검증
 

@@ -12,7 +12,7 @@ Stoogle ("주식 전용 구글") is a Korean stock insight search platform. It p
 - **Backend**: FastAPI + SQLAlchemy 2.0 + pykrx (port 8000)
 - **Database**: PostgreSQL 16 with pgvector (Docker); falls back to SQLite when `DATABASE_URL` is unset
 - **Task Queue**: Celery + Redis for scheduled data fetching
-- **LLM**: OpenAI gpt-4o-mini via LangChain for summarization
+- **LLM**: CLAUDE claude-ai via LangChain for summarization
 
 ## Common Commands
 
@@ -65,7 +65,7 @@ There are currently **no tests** and **no linting configs**. The project has no 
 - `services/` — business logic
   - `stock_service.py`: pykrx-based price & market data
   - `news_service.py`: Naver Finance scraping + keyword-based sentiment ranking
-  - `nlp_service.py`: Korean keyword extraction (KoNLPy Okt, regex fallback) + OpenAI summarization
+  - `nlp_service.py`: Korean keyword extraction (KoNLPy Okt, regex fallback) + CLAUDE summarization
   - `relation_service.py`: Pearson correlation between stock price series
   - `cache_service.py`: Redis key/value caching with TTLs (ticker registry, prices, news)
 - `models/db_models.py`: SQLAlchemy ORM (Company, PriceHistory, NewsCache, InsightCache, RelationCache, DartAnalysis, PredictionLog); pgvector-only tables (NewsVector, PredictionVector, DartChunk) are defined conditionally when `DATABASE_URL` points to PostgreSQL
@@ -108,7 +108,7 @@ There are currently **no tests** and **no linting configs**. The project has no 
 
 ## Key Design Decisions
 
-- All external data fetching has graceful fallbacks (empty results if pykrx unavailable, regex extraction if KoNLPy fails, heuristic summary if OpenAI fails)
+- All external data fetching has graceful fallbacks (empty results if pykrx unavailable, regex extraction if KoNLPy fails, heuristic summary if CLAUDE fails)
 - Sentiment analysis uses simple Korean keyword matching (상승/급등 = positive, 하락/급락 = negative), not ML models
 - Company relationship strength is determined by Pearson correlation thresholds (0.8+ = 경쟁, 0.6+ = 협력, 0.4+ = 공급망, <0.4 = 관심); three sources: pykrx price correlation, DART filings, LangChain news extraction
 - Impact rules in `relation_service.py` and the `ImpactList` component are hardcoded per ticker (currently only Samsung/SK Hynix), not dynamically computed
@@ -125,7 +125,7 @@ There are currently **no tests** and **no linting configs**. The project has no 
 
 ## Environment Variables
 
-See `stoggle/backend/.env.example`. Key variables:
+See `stoogle/backend/.env.example`. Key variables:
 
 | Variable | Purpose | Required |
 |---|---|---|
@@ -142,7 +142,7 @@ See `stoggle/backend/.env.example`. Key variables:
 
 ## Other Context Files
 
-`stoggle/CLAUDE_CONTEXT.md` is a Korean-language architecture document written during early planning. Its API response schemas and Celery schedules are partially outdated — treat this file as historical reference, not ground truth. The schemas in `models/schemas.py` and the task table above are authoritative.
+`stoogle/CLAUDE_CONTEXT.md` is a Korean-language architecture document written during early planning. Its API response schemas and Celery schedules are partially outdated — treat this file as historical reference, not ground truth. The schemas in `models/schemas.py` and the task table above are authoritative.
 
 ## Git Workflow
 

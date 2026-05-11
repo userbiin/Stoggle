@@ -9,10 +9,10 @@ from typing import Optional
 from models.schemas import Keyword
 
 try:
-    from openai import AsyncOpenAI
-    OPENAI_AVAILABLE = True
+    from anthropic import AsyncAnthropic
+    ANTHROPIC_AVAILABLE = True
 except ImportError:
-    OPENAI_AVAILABLE = False
+    ANTHROPIC_AVAILABLE = False
 
 try:
     from konlpy.tag import Okt
@@ -65,9 +65,9 @@ async def summarize_with_llm(
     news_titles: list[str],
 ) -> Optional[str]:
     """
-    OpenAI API로 뉴스 요약 생성
+    Anthropic API로 뉴스 요약 생성
     """
-    if not OPENAI_AVAILABLE or not os.getenv("OPENAI_API_KEY"):
+    if not ANTHROPIC_AVAILABLE or not os.getenv("ANTHROPIC_API_KEY"):
         return _fallback_summary(company_name, news_titles)
 
     titles_text = "\n".join(f"- {t}" for t in news_titles[:10])
@@ -79,14 +79,14 @@ async def summarize_with_llm(
 수치나 구체적인 내용을 포함하되, 투자 권유는 하지 마세요."""
 
     try:
-        client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        response = await client.chat.completions.create(
-            model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
+        client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        response = await client.messages.create(
+            model=os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001"),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=300,
         )
-        return response.choices[0].message.content.strip()
+        return response.content[0].text.strip()
     except Exception:
         return _fallback_summary(company_name, news_titles)
 

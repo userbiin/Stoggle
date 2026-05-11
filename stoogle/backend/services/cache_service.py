@@ -47,7 +47,7 @@ def get_ticker_registry() -> Optional[dict]:
 
     반환 형태:
       {
-        "005930": {"ticker": "005930", "name": "삼성전자", "market": "KOSPI"},
+        "XXXXXX": {"ticker": "XXXXXX", "name": "종목명", "market": "KOSPI"},
         ...
       }
     ticker 키와 name 키 모두 검색에 사용할 수 있도록
@@ -70,7 +70,7 @@ def set_ticker_registry(registry: dict) -> bool:
 
     registry 형태:
       {
-        "005930": {"ticker": "005930", "name": "삼성전자", "market": "KOSPI"},
+        "XXXXXX": {"ticker": "XXXXXX", "name": "종목명", "market": "KOSPI"},
         ...
       }
     """

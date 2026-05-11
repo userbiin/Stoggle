@@ -438,19 +438,19 @@ if __name__ == "__main__":
         PredictionRecord(
             ticker="000660", source_ticker="005930",
             direction="up", confidence=0.82,
-            reason="HBM3E 공급 계약 확대로 SK하이닉스 수혜 예상",
+            reason="공급 계약 확대 수혜 예상",
             prediction_date=d0, target_date=d3,
         ),
         PredictionRecord(
             ticker="009150", source_ticker="005930",
             direction="up", confidence=0.65,
-            reason="삼성전자 부품 발주 증가로 삼성전기 매출 상승",
+            reason="부품 발주 증가로 매출 상승",
             prediction_date=d0, target_date=d3,
         ),
         PredictionRecord(
             ticker="035420", source_ticker="005930",
             direction="down", confidence=0.45,
-            reason="메모리 가격 하락시 IT 광고 시장 위축 우려",
+            reason="업황 악화시 광고 시장 위축 우려",
             prediction_date=d0, target_date=d3,
         ),
     ]

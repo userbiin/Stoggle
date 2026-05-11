@@ -1,4 +1,4 @@
-# Stoggle — 주식 종목 인사이트 플랫폼
+# Stoogle — 주식 종목 인사이트 플랫폼
 
 최종 update : 2026-04-30
 
@@ -57,12 +57,12 @@ Frontend는 기본적으로 mock 데이터를 사용하며, `REACT_APP_USE_MOCK=
   - page=1 뉴스 Redis 캐시
 - NLP/LLM
   - `konlpy`가 있으면 Okt 명사 추출, 실패 시 정규식 fallback
-  - OpenAI API 키가 있으면 뉴스 요약 생성
+  - CLAUDE API 키가 있으면 뉴스 요약 생성
   - API 키가 없거나 호출 실패 시 간단 fallback 요약 반환
 - 관계 분석
   - Redis 캐시가 적용된 주가 히스토리 기반으로 기준 종목과 KOSPI200 후보 종목 간 종가 Pearson 상관계수 계산
   - D3 관계 그래프용 `nodes`, `links`, `related_companies` 반환
-  - OpenAI API 키가 있으면 최신 뉴스와 관계사 목록을 바탕으로 영향 종목 추론
+  - CLAUDE API 키가 있으면 최신 뉴스와 관계사 목록을 바탕으로 영향 종목 추론
 - Celery 자동화
   - Redis broker/backend 사용
   - 주가 캐시, 뉴스 사전 수집, 뉴스 크롤링, DART 공시 수집, 상관계수 재계산, 관계도 갱신 태스크 정의
@@ -195,7 +195,7 @@ DATABASE_URL=postgresql://stoogle:stoogle1234@localhost:5432/stoogle
 | GET | `/api/v1/search?q={query}` | 기업명·종목코드 검색 | Redis registry → pykrx |
 | GET | `/api/v1/insight/{ticker}` | 기업 종합 인사이트 | pykrx + 뉴스 + NLP/LLM |
 | GET | `/api/v1/news/{ticker}` | 기업 뉴스 목록 | Redis news cache → 네이버 금융 크롤링 |
-| GET | `/api/v1/relations/{ticker}` | 연관 기업 관계도/영향 종목 | pykrx 상관계수 + OpenAI optional |
+| GET | `/api/v1/relations/{ticker}` | 연관 기업 관계도/영향 종목 | pykrx 상관계수 + CLAUDE optional |
 | GET | `/health` | 서버 상태 확인 | FastAPI |
 
 ---
@@ -205,8 +205,8 @@ DATABASE_URL=postgresql://stoogle:stoogle1234@localhost:5432/stoogle
 | 단계 | 명칭 | 명세 요약 | 현재 상태 |
 |------|------|-----------|-----------|
 | 1 | 뉴스 수집 | Naver API/Celery로 1시간마다 기사 URL·제목·발행시각 수집 | 부분 구현: 네이버 금융 종목 뉴스 크롤링 + Redis 캐시. Naver Search API 기반 쿼리 템플릿 수집은 미연결 |
-| 2 | 원문 추출·요약 에이전트 | 기사 URL → 본문 추출 → 품질 평가 → GPT-4o-mini 3문장 요약 → DB 저장 | 부분 구현: `summary_agent.py` 구현. 기존 뉴스 API 파이프라인에는 미연결 |
-| 3 | Embedding 선필터 | 요약 기사 전체 → 중복 제거 후 pgvector 색인, 모델 BGE-M3 | 부분 구현: `dedup_indexer.py` 구현. 현재 모델은 OpenAI `text-embedding-3-small`이며 BGE-M3 아님 |
+| 2 | 원문 추출·요약 에이전트 | 기사 URL → 본문 추출 → 품질 평가 → claude-ai 3문장 요약 → DB 저장 | 부분 구현: `summary_agent.py` 구현. 기존 뉴스 API 파이프라인에는 미연결 |
+| 3 | Embedding 선필터 | 요약 기사 전체 → 중복 제거 후 pgvector 색인, 모델 BGE-M3 | 부분 구현: `dedup_indexer.py` 구현. 현재 모델은 CLAUDE `text-embedding-3-small`이며 BGE-M3 아님 |
 | 4 | 관련성 판별 에이전트 | 종목 프로필 + 후보 기사 → EXAONE 점수 0~5, 4점 이상 통과 | 구현 파일 있음: `relevance_agent.py`. 기존 뉴스 수집 파이프라인에는 미연결 |
 | 5 | 조건부 게이트 | 통과 기사 0건이면 종료, 1건 이상이면 다음 단계 | 미구현: 통합 파이프라인 연결 시 구현 필요 |
 | 6 | 이벤트·관계·요약 통합 에이전트 | 통과 기사 + DART/관계 RAG → structured output | 부분 구현: 영향 종목 추론은 `news_agent.py`에 있음. DART/관계 RAG 통합은 미구현 |
@@ -223,15 +223,15 @@ DATABASE_URL=postgresql://stoogle:stoogle1234@localhost:5432/stoogle
 - [x] FastAPI 백엔드 API 서빙
 - [x] Pearson 상관계수 기반 기업 관계 도출
 - [x] D3.js 기업 관계 시각화
-- [~] API 키/LLM 입력 시 동작: OpenAI/EXAONE 키가 없으면 fallback 또는 빈 결과. 키 입력 후에는 요약·영향 추론·관련도 판별 모듈이 동작 가능하지만, 전체 뉴스 파이프라인 연결은 추가 구현 필요
+- [~] API 키/LLM 입력 시 동작: CLAUDE/EXAONE 키가 없으면 fallback 또는 빈 결과. 키 입력 후에는 요약·영향 추론·관련도 판별 모듈이 동작 가능하지만, 전체 뉴스 파이프라인 연결은 추가 구현 필요
 
 ---
 
 ## 환경변수
 
 ```env
-OPENAI_API_KEY=sk-...
-LLM_MODEL=gpt-4o-mini
+CLAUDE_API_KEY=sk-...
+LLM_MODEL=claude-ai
 DART_API_KEY=
 DATABASE_URL=postgresql://postgres.[PROJECT_ID]:[YOUR-PASSWORD]@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres
 REDIS_URL=redis://localhost:6379/0
@@ -245,7 +245,7 @@ EXAONE_MODEL=EXAONE-3.5-7.8B-Instruct
 
 ✔️ 확인 사항 :
 
-- OpenAI API 키가 없으면 LLM 요약과 영향 종목 추론은 fallback 또는 빈 결과로 처리됨
+- CLAUDE API 키가 없으면 LLM 요약과 영향 종목 추론은 fallback 또는 빈 결과로 처리됨
 - EXAONE API 키가 없으면 관련도 판별 에이전트는 0점 처리되며, 현재 핵심 주가/관계 API에는 영향 X
 - DART API 키가 없으면 공시 수집 Celery 태스크는 skip
 - `DATABASE_URL`은 SQLAlchemy 테이블 생성과 pgvector 뉴스 색인 모듈에서 사용
@@ -281,7 +281,7 @@ EXAONE_MODEL=EXAONE-3.5-7.8B-Instruct
 - [x] pykrx 기반 종목 검색/주가/시총 데이터 수집 서비스 구현
 - [x] Redis 기반 종목 레지스트리/현재가/주가 히스토리/뉴스 캐싱 구현
 - [x] 네이버 금융 뉴스 크롤링 및 간단 랭킹/분류 구현
-- [x] 키워드 추출 및 OpenAI 요약 fallback 구현
+- [x] 키워드 추출 및 CLAUDE 요약 fallback 구현
 - [x] Pearson 상관계수 기반 기업 관계 도출 구현
 - [x] D3 관계 그래프용 데이터 생성 및 프론트 시각화 구현
 - [x] Celery 자동화 태스크 골격 및 뉴스 사전 수집 태스크 구현
@@ -289,6 +289,7 @@ EXAONE_MODEL=EXAONE-3.5-7.8B-Instruct
 
 ### 진행 중 / 보완 필요
 
+- [ ] 뉴스 분류 알고리즘 ⭐️
 - [ ] `REACT_APP_USE_MOCK=false` 상태에서 프론트-백엔드 실데이터 E2E 검증
 - [ ] Redis 실행 환경에서 검색/뉴스/가격 캐시 동작 검증
 - [ ] Notion API 명세 block과 실제 FastAPI 응답 스키마 최종 대조

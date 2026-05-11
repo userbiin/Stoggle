@@ -1,6 +1,4 @@
-"""
-상관계수 기반 연관 기업 관계 도출 서비스
-"""
+# 상관계수 기반 연관 기업 관계 도출 서비스
 from typing import Optional
 import logging
 import numpy as np
@@ -25,7 +23,6 @@ def _get_relation_type(corr: float) -> str:
 
 
 def _get_name(ticker: str, registry: dict) -> str:
-    """레지스트리에서 종목명 조회. 없으면 ticker 코드 반환."""
     return registry.get(ticker, {}).get("name", ticker)
 
 
@@ -55,7 +52,7 @@ def _pearson_corr(
     candidate_series: dict[str, float],
     min_points: int = 20,
 ) -> Optional[float]:
-    """두 종목의 공통 거래일 종가 기준 Pearson 상관계수."""
+    # 두 종목의 공통 거래일 종가 기준 Pearson 상관계수
     common_dates = sorted(set(base_series) & set(candidate_series))
     if len(common_dates) < min_points:
         return None
