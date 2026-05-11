@@ -90,7 +90,7 @@ const styles = {
   },
 };
 
-const HINT_QUERIES = ['삼성전자', 'SK하이닉스', 'NAVER', '카카오', '현대차', 'LG에너지솔루션'];
+const HINT_QUERIES = [];
 
 export default function MainPage() {
   const [query, setQuery] = useState('');

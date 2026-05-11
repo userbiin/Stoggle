@@ -385,26 +385,26 @@ if __name__ == "__main__":
     sample_articles = [
         Article(
             url="https://example.com/1",
-            title="삼성전자, 3분기 영업이익 10조 돌파 — HBM3E 공급 확대 효과",
-            summary="AI 서버 수요 증가로 HBM 매출 급증",
+            title="3분기 영업이익 큰 폭 증가 — 수출 호조 효과",
+            summary="글로벌 수요 증가로 매출 급증",
         ),
         Article(
             url="https://example.com/2",
-            title="삼성전자 파운드리 2nm 수율 개선 — GAA 공정 양산 임박",
-            summary="2025년 2분기 내 양산 목표",
+            title="신공정 수율 개선 — 양산 일정 확정",
+            summary="내년 상반기 내 양산 목표",
         ),
         Article(
             url="https://example.com/3",
-            title="메모리 반도체 가격 3개월 연속 상승 — DDR5 수요 견고",
-            summary="PC·서버 교체 수요 맞물려 D램 현물가 회복세",
+            title="핵심 부품 가격 3개월 연속 상승 — 수요 견고",
+            summary="교체 수요 맞물려 현물가 회복세",
         ),
     ]
 
     sample_relation = (
         "[관계 기업 목록]\n"
-        "  - 000660 (경쟁): 상관계수 0.91 — SK하이닉스, HBM 경쟁사\n"
-        "  - 005387 (협력): 상관계수 0.74 — 삼성전기, 적층세라믹콘덴서 공급\n"
-        "  - 009150 (공급망): 상관계수 0.62 — 삼성SDI, 배터리 계열사"
+        "  - 000660 (경쟁): 상관계수 0.91\n"
+        "  - 005387 (협력): 상관계수 0.74\n"
+        "  - 009150 (공급망): 상관계수 0.62"
     )
 
     result = asyncio.run(run(sample_articles, ticker_arg, relation_context=sample_relation))

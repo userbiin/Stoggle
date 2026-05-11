@@ -28,38 +28,6 @@ from services.cache_service import (
     get_history_cache, set_history_cache,
 )
 
-FALLBACK_COMPANY_NAMES = {
-    "005930": "삼성전자",
-    "000660": "SK하이닉스",
-    "035420": "NAVER",
-    "051910": "LG화학",
-    "207940": "삼성바이오로직스",
-    "035720": "카카오",
-    "066570": "LG전자",
-    "005380": "현대차",
-    "000270": "기아",
-    "068270": "셀트리온",
-    "028260": "삼성물산",
-    "105560": "KB금융",
-    "055550": "신한지주",
-    "032830": "삼성생명",
-    "003550": "LG",
-    "259960": "크래프톤",
-    "012330": "현대모비스",
-    "015760": "한국전력",
-    "030200": "KT",
-    "096770": "SK이노베이션",
-    "017670": "SK텔레콤",
-    "034730": "SK",
-    "009150": "삼성전기",
-    "010950": "S-Oil",
-    "000810": "삼성화재",
-    "011200": "HMM",
-    "034020": "두산에너빌리티",
-    "033780": "KT&G",
-    "003490": "대한항공",
-    "316140": "우리금융지주",
-}
 
 
 def _today() -> str:
@@ -68,6 +36,24 @@ def _today() -> str:
 
 def _n_days_ago(n: int) -> str:
     return (datetime.today() - timedelta(days=n)).strftime("%Y%m%d")
+
+
+def _is_trading_hours() -> bool: # 장 중 여부 판별 (평일 09:00 ~ 15:00)
+    now = datetime.now()
+    return (
+        now.weekday() < 5
+        and (9, 0) <= (now.hour, now.minute) <= (15, 30)
+    )
+
+
+def _cache_ttl_for_price() -> int:
+    """장 중이면 60초, 장외(주말·야간)면 48시간"""
+    return 60 if _is_trading_hours() else 60 * 60 * 48
+
+
+def _cache_ttl_for_history() -> int:
+    """장 중이면 10분, 장외면 24시간"""
+    return 600 if _is_trading_hours() else 60 * 60 * 24
 
 
 def _normalize_ticker(value) -> Optional[str]:
@@ -140,20 +126,18 @@ def _normalize_ticker_list(raw) -> list[str]:
 
 def _coerce_company_name(value, ticker: str) -> str:
     """종목명 반환값이 DataFrame/Series여도 검색 가능한 문자열로 보정."""
-    fallback = FALLBACK_COMPANY_NAMES.get(ticker, ticker)
-
     if value is None:
-        return fallback
+        return ticker
 
     if isinstance(value, str):
-        return value.strip() or fallback
+        return value.strip() or ticker
 
     if isinstance(value, pd.Series):
         for item in value.tolist():
             name = _coerce_company_name(item, ticker)
             if name != ticker:
                 return name
-        return fallback
+        return ticker
 
     if isinstance(value, pd.DataFrame):
         candidate_columns = ["종목명", "한글명", "name", "Name", "회사명"]
@@ -162,25 +146,20 @@ def _coerce_company_name(value, ticker: str) -> str:
                 return _coerce_company_name(value[col].iloc[0], ticker)
         if not value.empty:
             return _coerce_company_name(value.iloc[0, 0], ticker)
-        return fallback
+        return ticker
 
     text = str(value).strip()
-    return text if text and text != "nan" else fallback
+    return text if text and text != "nan" else ticker
 
 
 def _get_ticker_name(ticker: str) -> str:
-    if ticker in FALLBACK_COMPANY_NAMES:
-        fallback = FALLBACK_COMPANY_NAMES[ticker]
-    else:
-        fallback = ticker
-
     if not PYKRX_AVAILABLE:
-        return fallback
+        return ticker
 
     try:
         return _coerce_company_name(pykrx_stock.get_market_ticker_name(ticker), ticker)
     except Exception:
-        return fallback
+        return ticker
 
 
 # ---------------------------------------------------------------------------
@@ -188,13 +167,6 @@ def _get_ticker_name(ticker: str) -> str:
 # ---------------------------------------------------------------------------
 
 def build_ticker_registry() -> dict:
-    """
-    KRX 전종목 레지스트리를 pykrx로 구축한다.
-
-    1차: get_market_ticker_list()로 전종목 조회
-    2차(fallback): 리스트 API 실패 시 KOSPI200_FALLBACK 종목을
-                   get_market_ticker_name()으로 개별 조회
-    """
     if not PYKRX_AVAILABLE:
         return {}
 
@@ -273,8 +245,7 @@ def get_price_history(ticker: str, days: int = 90) -> list[PricePoint]:
                 volume=int(row["거래량"]),
             ))
 
-        # Redis 캐싱 (dict로 직렬화)
-        set_history_cache(ticker, [p.model_dump() for p in result])
+        set_history_cache(ticker, [p.model_dump() for p in result], ttl=_cache_ttl_for_history())
         return result
 
     except Exception as e:
@@ -288,7 +259,7 @@ def get_price_history(ticker: str, days: int = 90) -> list[PricePoint]:
 
 def get_current_price(ticker: str) -> Optional[dict]:
     """
-    현재가 + 등락률 조회. Redis 캐시(60초) → pykrx 순으로 시도.
+    현재가 + 등락률 조회 Redis 캐시(60초) → pykrx
     """
     cached = get_price_cache(ticker)
     if cached is not None:
@@ -319,7 +290,7 @@ def get_current_price(ticker: str) -> Optional[dict]:
             "change": round(change_pct, 2),
             "change_amount": round(change_amount, 0),
         }
-        set_price_cache(ticker, result)
+        set_price_cache(ticker, result, ttl=_cache_ttl_for_price())
         return result
 
     except Exception as e:

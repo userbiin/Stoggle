@@ -78,6 +78,11 @@ app.conf.beat_schedule = {
         "task": "tasks.index_dart_disclosures",
         "schedule": crontab(hour=18, minute=0),
     },
+    # 장 마감 후 KOSPI200 현재가 장기 캐싱 (평일 15:35 — 주말까지 유지)
+    "cache-eod-prices": {
+        "task": "tasks.cache_eod_prices",
+        "schedule": crontab(hour=15, minute=35, day_of_week="mon-fri"),
+    },
 }
 
 # KOSPI 200 구성 종목 — pykrx로 동적 조회, 실패 시 아래 fallback 사용
@@ -353,7 +358,6 @@ def update_relation_graphs(self):
     return {"status": "ok", "updated": results}
 
 
-<<<<<<< HEAD
 # ─────────────────────────────────────────────────────────────────────────────
 # 보정 태스크
 # ─────────────────────────────────────────────────────────────────────────────
@@ -376,18 +380,13 @@ def calibrate_predictions(self):
         raise self.retry(exc=e)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 온디맨드 태스크
-# ─────────────────────────────────────────────────────────────────────────────
-
-=======
 @app.task(bind=True, max_retries=3, default_retry_delay=120)
 def index_dart_disclosures(self):
     """주요 종목 DART 공시·재무제표 pgvector 색인 (매일 18:00)"""
     from agents.dart_indexer import run as dart_run
 
     results = {}
-    for ticker in MAJOR_TICKERS:
+    for ticker in KOSPI200_TICKERS:
         try:
             count = asyncio.run(dart_run(ticker))
             results[ticker] = count
@@ -398,7 +397,66 @@ def index_dart_disclosures(self):
     return {"indexed": results}
 
 
->>>>>>> origin/feat/2
+# ─────────────────────────────────────────────────────────────────────────────
+# 장 마감 후 가격 장기 캐싱 (주말/공휴일 대비)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(bind=True, max_retries=3, default_retry_delay=60)
+def cache_eod_prices(self):
+    """
+    장 마감 직후(15:35) KOSPI200 종가를 48h TTL로 Redis에 저장한다.
+    주말·공휴일에도 가장 최근 종가를 조회할 수 있도록 캐시를 유지한다.
+    """
+    try:
+        from pykrx import stock as pykrx_stock
+        from services.cache_service import set_price_cache
+
+        TTL_EOD = 60 * 60 * 48  # 48시간 — 주말(토~월)을 포함한 시간
+
+        today = datetime.today().strftime("%Y%m%d")
+        yesterday = (datetime.today() - timedelta(days=1)).strftime("%Y%m%d")
+
+        df = pykrx_stock.get_market_ohlcv_by_ticker(today, market="KOSPI")
+        df_prev = pykrx_stock.get_market_ohlcv_by_ticker(yesterday, market="KOSPI")
+
+        if df is None or df.empty:
+            return {"status": "skip", "reason": "데이터 없음"}
+
+        updated = 0
+        for ticker in KOSPI200_TICKERS:
+            try:
+                if ticker not in df.index:
+                    continue
+                price = float(df.loc[ticker]["종가"])
+                prev_price = (
+                    float(df_prev.loc[ticker]["종가"])
+                    if df_prev is not None and not df_prev.empty and ticker in df_prev.index
+                    else price
+                )
+                change_amount = price - prev_price
+                change_pct = (change_amount / prev_price * 100) if prev_price else 0
+
+                set_price_cache(ticker, {
+                    "price": price,
+                    "change": round(change_pct, 2),
+                    "change_amount": round(change_amount, 0),
+                }, ttl=TTL_EOD)
+                updated += 1
+            except Exception as e:
+                logger.warning(f"EOD 가격 캐싱 실패 ({ticker}): {e}")
+
+        return {"status": "ok", "updated": updated}
+    except ImportError:
+        return {"status": "skip", "reason": "pykrx 미설치"}
+    except Exception as e:
+        logger.error(f"cache_eod_prices 실패: {e}")
+        raise self.retry(exc=e)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 온디맨드 태스크
+# ─────────────────────────────────────────────────────────────────────────────
+
 @app.task
 def analyze_single_ticker(ticker: str):
     """단일 종목 인사이트 갱신 (사용자 검색 시 온디맨드 트리거)"""
