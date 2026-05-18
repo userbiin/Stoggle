@@ -140,6 +140,49 @@ def _build_dart_context(ticker: str) -> str:
         return ""
 
 
+def _build_accuracy_context(ticker: str) -> str:
+    """
+    PredictionLog에서 이 종목(source_ticker)의 과거 예측 정확도를 조회하여
+    LLM 프롬프트에 삽입할 통계 텍스트로 반환.
+    데이터 없거나 DB 오류 시 빈 문자열 반환 (non-blocking).
+    """
+    try:
+        from models.db_models import PredictionLog, SessionLocal
+
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(PredictionLog)
+                .filter(
+                    PredictionLog.source_ticker == ticker,
+                    PredictionLog.is_correct.isnot(None),
+                )
+                .order_by(PredictionLog.predicted_at.desc())
+                .limit(50)
+                .all()
+            )
+            if not rows:
+                return ""
+
+            total = len(rows)
+            correct = sum(1 for r in rows if r.is_correct)
+            accuracy = correct / total if total else 0.0
+            avg_cal = sum(r.calibrated_confidence for r in rows if r.calibrated_confidence) / max(
+                sum(1 for r in rows if r.calibrated_confidence), 1
+            )
+            return (
+                f"[과거 예측 정확도 — {ticker} 기준]\n"
+                f"  최근 {total}건 방향 정확도: {accuracy:.1%}\n"
+                f"  평균 보정 confidence: {avg_cal:.3f}\n"
+                f"  (정확도가 낮으면 impacts의 confidence 수치를 보수적으로 제시하세요)"
+            )
+        finally:
+            db.close()
+    except Exception as e:
+        logger.debug("정확도 컨텍스트 조회 실패: %s", e)
+    return ""
+
+
 def _build_relation_context(ticker: str) -> str:
     """RelationCache 테이블에서 관계 기업 정보를 텍스트로 반환."""
     try:
@@ -267,8 +310,9 @@ async def run(
     if not relation_context:
         relation_context = _build_relation_context(ticker)
 
-    # pgvector 유사 기사 보강
+    # pgvector 유사 기사 보강 + 과거 예측 정확도
     similar_ctx = await _retrieve_similar_news_context(articles)
+    accuracy_ctx = _build_accuracy_context(ticker)
 
     # 프롬프트 조립
     article_lines = "\n".join(
@@ -276,7 +320,7 @@ async def run(
     )
     user_prompt = f"종목: {ticker}\n\n[오늘 뉴스 기사]\n{article_lines}"
 
-    for ctx in (dart_context, relation_context, similar_ctx):
+    for ctx in (dart_context, relation_context, similar_ctx, accuracy_ctx):
         if ctx:
             user_prompt += f"\n\n{ctx}"
 
@@ -325,6 +369,58 @@ async def run(
         return None
 
 
+def _save_prediction_logs(ticker: str, result: "AnalysisResult") -> None:
+    """
+    analysis_agent 결과의 impacts를 PredictionLog 테이블에 기록한다.
+
+    각 impact 항목: {ticker, name, direction(up/down/neutral), reason, confidence}
+    prediction_date = D+0 오늘, target_date = D+3
+    base_close는 현재가(Redis/pykrx)에서 조회, 없으면 None으로 저장.
+    """
+    try:
+        from models.db_models import PredictionLog, SessionLocal
+        from services.stock_service import get_current_price
+        from datetime import date, timedelta
+
+        today_str = date.today().strftime("%Y-%m-%d")
+        target_str = (date.today() + timedelta(days=3)).strftime("%Y-%m-%d")
+
+        db = SessionLocal()
+        try:
+            for impact in result.impacts:
+                impact_ticker = impact.get("ticker", "")
+                direction = impact.get("direction", "neutral")
+                confidence = float(impact.get("confidence", 0.5))
+                reason = impact.get("reason", "")
+
+                if not impact_ticker or not direction:
+                    continue
+
+                price_info = get_current_price(impact_ticker)
+                base_close = price_info.get("price") if price_info else None
+
+                db.add(PredictionLog(
+                    ticker=impact_ticker,
+                    source_ticker=ticker,
+                    direction=direction,
+                    confidence=confidence,
+                    reason=reason,
+                    prediction_date=today_str,
+                    target_date=target_str,
+                    predicted_at=datetime.utcnow(),
+                    base_close=base_close,
+                ))
+
+            db.commit()
+            logger.info(
+                "PredictionLog 저장 완료 [source=%s, %d건]", ticker, len(result.impacts)
+            )
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error("PredictionLog 저장 실패 [ticker=%s]: %s", ticker, e)
+
+
 async def run_and_save(
     articles: list[Article],
     ticker: str,
@@ -336,6 +432,7 @@ async def run_and_save(
 
     summary 컬럼 → 종합 요약 텍스트
     keywords_json 컬럼 → events / relations / impacts / evidence / sentiment JSON
+    impacts는 PredictionLog 테이블에도 기록하여 calibrator 피드백 루프를 활성화한다.
     """
     result = await run(articles, ticker, dart_context, relation_context)
     if result is None:
@@ -376,6 +473,10 @@ async def run_and_save(
             db.close()
     except Exception as e:
         logger.error("insight_cache 저장 실패 [ticker=%s]: %s", ticker, e)
+
+    # PredictionLog 기록 (calibrator 피드백 루프 Step A)
+    if result.impacts:
+        _save_prediction_logs(ticker, result)
 
     return result
 

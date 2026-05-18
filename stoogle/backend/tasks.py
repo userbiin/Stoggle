@@ -297,20 +297,58 @@ def crawl_all_news(self):
     """
     KOSPI200 종목 뉴스 강제 크롤링 + Redis 캐시 갱신 (1시간 주기).
 
-    fetch_news(force=True) 로 캐시를 무시하고 항상 네이버에서 새 데이터를 가져온다.
-    가져온 결과는 fetch_news() 내부에서 자동으로 set_news_cache() 저장.
+    수집 완료 후 dedup_and_index_news 태스크를 체이닝하여
+    중복 제거 → pgvector 색인까지 이어서 실행한다.
     """
     from services.news_service import fetch_news
 
     results = {}
+    news_for_dedup: dict[str, list[tuple[str, str, str]]] = {}
+
     for ticker in KOSPI200_TICKERS:
         try:
             items = asyncio.run(fetch_news(ticker, force=True))
             results[ticker] = len(items)
+            if items:
+                # (url, title, summary) 튜플로 직렬화 — Celery 메시지에 담기 위해
+                news_for_dedup[ticker] = [
+                    (i.url, i.title, i.summary or "") for i in items
+                ]
         except Exception as e:
             logger.warning(f"뉴스 크롤링 실패 ({ticker}): {e}")
 
+    # 수집 완료 → 중복 제거 + pgvector 색인 태스크 체이닝
+    if news_for_dedup:
+        dedup_and_index_news.delay(news_for_dedup)
+
     return {"status": "ok", "crawled": results}
+
+
+@app.task(bind=True, max_retries=1, default_retry_delay=60)
+def dedup_and_index_news(self, news_by_ticker: dict):
+    """
+    뉴스 중복 제거 + pgvector 색인 (crawl_all_news 후속 태스크).
+
+    news_by_ticker: {ticker: [(url, title, summary), ...]}
+    OPENAI_API_KEY 미설정 시 임베딩 없이 배치 내 중복 제거만 수행한다.
+    """
+    from agents.dedup_indexer import Article, run as dedup_run
+
+    results = {}
+    for ticker, raw_items in news_by_ticker.items():
+        try:
+            articles = [
+                Article(url=url, title=title, summary=summary)
+                for url, title, summary in raw_items
+            ]
+            unique = asyncio.run(dedup_run(articles))
+            results[ticker] = {"total": len(articles), "unique": len(unique)}
+        except Exception as e:
+            logger.warning("dedup 실패 (%s): %s", ticker, e)
+            results[ticker] = {"error": str(e)}
+
+    logger.info("dedup_and_index_news 완료: %d개 종목", len(results))
+    return {"status": "ok", "indexed": results}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

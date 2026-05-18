@@ -166,6 +166,36 @@ def _get_ticker_name(ticker: str) -> str:
 # 종목 레지스트리 (ticker → {ticker, name, market})
 # ---------------------------------------------------------------------------
 
+def _get_sector_map(market: str, date_str: str) -> dict[str, str]:
+    """
+    pykrx에서 시장별 업종 분류 맵을 조회한다.
+    반환: {ticker: sector_name}
+    실패 시 빈 딕셔너리 반환 (레지스트리 구축 중단 방지).
+    """
+    try:
+        df = pykrx_stock.get_market_sector_classifications(date_str, market=market)
+        if df is None or df.empty:
+            return {}
+
+        # pykrx 반환 컬럼에서 업종명 컬럼을 동적으로 탐색
+        sector_col = next(
+            (c for c in df.columns if "업종" in c or "sector" in c.lower()),
+            None,
+        )
+        if not sector_col:
+            return {}
+
+        result = {}
+        for idx, row in df.iterrows():
+            ticker = _normalize_ticker(idx)
+            if ticker:
+                result[ticker] = str(row[sector_col]).strip()
+        return result
+    except Exception as e:
+        logger.warning("%s 업종 정보 조회 실패: %s", market, e)
+        return {}
+
+
 def build_ticker_registry() -> dict:
     if not PYKRX_AVAILABLE:
         return {}
@@ -182,9 +212,17 @@ def build_ticker_registry() -> dict:
             logger.warning(f"{market} 종목 리스트 조회 실패: {e}")
             tickers = []
 
+        # 업종 정보 일괄 조회 (실패해도 레지스트리 구축 계속)
+        sector_map = _get_sector_map(market, today)
+
         for ticker in tickers:
             name = _get_ticker_name(ticker)
-            registry[ticker] = {"ticker": ticker, "name": name, "market": market}
+            registry[ticker] = {
+                "ticker": ticker,
+                "name": name,
+                "market": market,
+                "sector": sector_map.get(ticker, ""),
+            }
 
     # get_market_ticker_list 가 빈 결과를 반환하는 환경(KRX API 제한 등)에 대한 fallback
     if not registry:
@@ -192,7 +230,7 @@ def build_ticker_registry() -> dict:
         from tasks import _KOSPI200_FALLBACK
         for ticker in _KOSPI200_FALLBACK:
             name = _get_ticker_name(ticker)
-            registry[ticker] = {"ticker": ticker, "name": name, "market": "KOSPI"}
+            registry[ticker] = {"ticker": ticker, "name": name, "market": "KOSPI", "sector": ""}
 
     logger.info(f"종목 레지스트리 구축 완료: {len(registry)}종목")
     return registry
@@ -373,7 +411,7 @@ def search_companies(query: str) -> list[CompanyBrief]:
                 ticker=ticker,
                 name=name,
                 market=meta.get("market", ""),
-                sector="",
+                sector=meta.get("sector", ""),
                 price=price_info.get("price") if price_info else None,
                 change=price_info.get("change") if price_info else None,
             ))
