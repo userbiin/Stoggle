@@ -1,21 +1,63 @@
-from fastapi import APIRouter, HTTPException
+import asyncio
+import json
+import logging
+
+from fastapi import APIRouter
 from models.schemas import InsightResponse
 from services.stock_service import get_price_history, get_current_price, get_market_cap_info, get_or_build_registry
 from services.news_service import fetch_news
 from services.nlp_service import extract_keywords, summarize_with_llm
 
 router = APIRouter(tags=["insight"])
+logger = logging.getLogger(__name__)
+
+# asyncio.create_task 결과 레퍼런스 유지 (GC 방지)
+_bg_tasks: set = set()
+
+
+def _load_cached_analysis(ticker: str) -> dict | None:
+    """
+    InsightCache 테이블에서 analysis_agent 결과를 조회한다.
+    keywords_json 컬럼에 events / relations / impacts / evidence / sentiment 포함.
+    """
+    try:
+        from models.db_models import InsightCache, SessionLocal
+
+        db = SessionLocal()
+        try:
+            row = db.query(InsightCache).filter(InsightCache.ticker == ticker).first()
+            if row and row.keywords_json:
+                return json.loads(row.keywords_json)
+        finally:
+            db.close()
+    except Exception as e:
+        logger.debug("InsightCache 조회 실패 [%s]: %s", ticker, e)
+    return None
+
+
+async def _run_analysis_background(ticker: str, articles: list) -> None:
+    """
+    analysis_agent.run_and_save()를 백그라운드에서 실행한다.
+    실패해도 메인 응답에 영향을 주지 않는다.
+    """
+    try:
+        from agents.analysis_agent import run_and_save
+        await run_and_save(articles, ticker)
+        logger.info("백그라운드 분석 완료 [%s]", ticker)
+    except Exception as e:
+        logger.warning("백그라운드 분석 실패 [%s]: %s", ticker, e)
 
 
 @router.get("/insight/{ticker}", response_model=InsightResponse)
 async def get_insight(ticker: str):
     ticker = ticker.upper()
 
-    # 종목명·시장 정보를 레지스트리에서 조회 (KOSPI/KOSDAQ 구분 포함)
+    # 종목명·시장·섹터 정보를 레지스트리에서 조회
     registry = get_or_build_registry()
     meta = registry.get(ticker, {})
     company_name = meta.get("name", ticker)
     market = meta.get("market", "KOSPI")
+    sector = meta.get("sector", "")
 
     price_history = get_price_history(ticker, days=90)
     price_info = get_current_price(ticker)
@@ -26,10 +68,7 @@ async def get_insight(ticker: str):
     keywords = extract_keywords(titles) if titles else []
     summary = await summarize_with_llm(ticker, company_name, titles) if titles else None
 
-    # Header price and chart should describe the same latest trading day.
-    # pykrx current-price and history calls can diverge briefly, or Redis may
-    # hold one cache slightly longer than the other, so prefer the latest
-    # history point for the response displayed on the detail page.
+    # 최신 거래일 기준 가격 정합성 보장 (히스토리 마지막 포인트 우선)
     latest_price = price_info.get("price") if price_info else None
     change = price_info.get("change") if price_info else None
     change_amount = price_info.get("change_amount") if price_info else None
@@ -40,11 +79,24 @@ async def get_insight(ticker: str):
             change_amount = round(latest_price - prev_close, 0)
             change = round((change_amount / prev_close * 100), 2) if prev_close else 0
 
+    # ── analysis_agent 결과 (캐시 우선, 없으면 백그라운드 트리거) ──────────
+    cached_analysis = _load_cached_analysis(ticker)
+
+    if not cached_analysis and news_items:
+        from agents.dedup_indexer import Article
+        articles = [
+            Article(url=n.url, title=n.title, summary=n.summary or "")
+            for n in news_items
+        ]
+        task = asyncio.create_task(_run_analysis_background(ticker, articles))
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
+
     return InsightResponse(
         ticker=ticker,
         name=company_name,
         market=market,
-        sector="",
+        sector=sector,
         price=latest_price,
         change=change,
         change_amount=change_amount,
@@ -55,4 +107,8 @@ async def get_insight(ticker: str):
         summary=summary,
         keywords=keywords,
         price_history=price_history,
+        events=cached_analysis.get("events", []) if cached_analysis else [],
+        sentiment=cached_analysis.get("sentiment") if cached_analysis else None,
+        analysis_impacts=cached_analysis.get("impacts", []) if cached_analysis else [],
+        evidence=cached_analysis.get("evidence", []) if cached_analysis else [],
     )

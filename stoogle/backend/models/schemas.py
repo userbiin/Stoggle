@@ -50,6 +50,11 @@ class InsightResponse(BaseModel):
     summary: Optional[str] = None
     keywords: list[Keyword] = []
     price_history: list[PricePoint] = []
+    # analysis_agent 결과 (InsightCache.keywords_json 파싱)
+    events: list[str] = []
+    sentiment: Optional[str] = None
+    analysis_impacts: list[dict] = []
+    evidence: list[str] = []
 
 
 # ---------- 뉴스 ----------
