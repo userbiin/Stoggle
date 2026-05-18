@@ -41,10 +41,10 @@ class Article:
 # ---------------------------------------------------------------------------
 
 async def _embed_batch(texts: list[str]) -> list[list[float]]:
-    """OpenAI text-embedding-3-small 배치 호출"""
+    """OpenAI text-embedding-3-small 배치 호출. OPENAI_API_KEY 미설정 시 빈 리스트 반환."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("API_KEY가 설정되지 않았습니다.")
+        return []
 
     from openai import AsyncOpenAI
     client = AsyncOpenAI(api_key=api_key)

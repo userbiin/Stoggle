@@ -1,7 +1,7 @@
 """
 DART 공시 원문 텍스트에서 핵심 재무 수치를 추출하는 에이전트
 
-GPT-4o structured output(beta.chat.completions.parse)을 사용해
+Claude structured output(tool_use)을 사용해
 비정형 공시 문서에서 revenue / op_profit / capex / inventory 를 파싱하고
 dart_analysis 테이블에 저장한다.
 
@@ -41,7 +41,7 @@ _SYSTEM_PROMPT = """\
 
 
 class _FinancialSchema(BaseModel):
-    """GPT-4o structured output 스키마 (억원 단위)"""
+    """Claude structured output 스키마 (억원 단위)"""
 
     revenue: Optional[float] = Field(None, description="매출액 (억원)")
     op_profit: Optional[float] = Field(None, description="영업이익 (억원)")
@@ -84,31 +84,40 @@ async def run(
     -------
     DartAnalysisResult, 또는 API 키 미설정·파싱 실패 시 None
     """
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        logger.warning("OPENAI_API_KEY 미설정 — dart_analyzer 건너뜀")
+        logger.warning("ANTHROPIC_API_KEY 미설정 — dart_analyzer 건너뜀")
         return None
 
-    model = os.getenv("DART_ANALYZER_MODEL", "gpt-4o")
+    model = os.getenv("DART_ANALYZER_MODEL", "claude-sonnet-4-6")
 
     try:
-        from openai import AsyncOpenAI
+        from anthropic import AsyncAnthropic
 
-        client = AsyncOpenAI(api_key=api_key)
-        response = await client.beta.chat.completions.parse(
+        client = AsyncAnthropic(api_key=api_key)
+        response = await client.messages.create(
             model=model,
+            max_tokens=2048,
             temperature=0,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"아래 DART 공시 원문을 분석해주세요:\n\n{dart_text[:16000]}",
-                },
-            ],
-            response_format=_FinancialSchema,
+            system=_SYSTEM_PROMPT,
+            messages=[{
+                "role": "user",
+                "content": f"아래 DART 공시 원문을 분석해주세요:\n\n{dart_text[:16000]}",
+            }],
+            tools=[{
+                "name": "output_financials",
+                "description": "DART 공시에서 추출한 재무 수치와 인사이트 출력",
+                "input_schema": _FinancialSchema.model_json_schema(),
+            }],
+            tool_choice={"type": "tool", "name": "output_financials"},
         )
 
-        parsed: Optional[_FinancialSchema] = response.choices[0].message.parsed
+        parsed: Optional[_FinancialSchema] = None
+        for block in response.content:
+            if block.type == "tool_use":
+                parsed = _FinancialSchema(**block.input)
+                break
+
         if parsed is None:
             logger.error("structured output 결과가 None [ticker=%s]", ticker)
             return None
@@ -220,4 +229,4 @@ if __name__ == "__main__":
         print(f"재고자산: {result.inventory:,.0f}억원" if result.inventory else "재고자산: N/A")
         print(f"인사이트:\n{result.insight}")
     else:
-        print("분석 실패 (OPENAI_API_KEY 확인 필요)")
+        print("분석 실패 (ANTHROPIC_API_KEY 확인 필요)")
