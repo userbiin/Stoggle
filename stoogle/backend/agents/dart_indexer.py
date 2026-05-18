@@ -254,9 +254,10 @@ def _chunk_section(content: str, max_tokens: int = MAX_TOKENS) -> list[tuple[str
 # ---------------------------------------------------------------------------
 
 async def _embed_batch(texts: list[str]) -> list[list[float]]:
+    """OPENAI_API_KEY 미설정 시 빈 리스트 반환 (pgvector 색인 건너뜀)."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY가 설정되지 않았습니다.")
+        return []
 
     from openai import AsyncOpenAI
     client = AsyncOpenAI(api_key=api_key)

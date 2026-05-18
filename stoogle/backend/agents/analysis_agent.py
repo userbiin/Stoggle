@@ -9,9 +9,9 @@
 
 출력: AnalysisResult {events, relations, summary, sentiment, impacts, evidence}
 
-- GPT-4o structured output 1회 호출로 전체 분석 동시 생성
-- pgvector cosine 검색으로 유사 과거 기사 보강
-- 통과 기사가 없으면 GPT-4o 호출 없이 즉시 None 반환
+- Claude structured output (tool_use) 1회 호출로 전체 분석 동시 생성
+- pgvector cosine 검색으로 유사 과거 기사 보강 (OPENAI_API_KEY 설정 시)
+- 통과 기사가 없으면 LLM 호출 없이 즉시 None 반환
 - 결과는 insight_cache 테이블에 upsert
 """
 from __future__ import annotations
@@ -256,9 +256,9 @@ async def run(
         logger.info("[%s] 통과 기사 없음 — 분석 건너뜀", ticker)
         return None
 
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        logger.warning("OPENAI_API_KEY 미설정 — analysis_agent 건너뜀")
+        logger.warning("ANTHROPIC_API_KEY 미설정 — analysis_agent 건너뜀")
         return None
 
     # 컨텍스트 자동 조회 (미제공 시)
@@ -280,24 +280,32 @@ async def run(
         if ctx:
             user_prompt += f"\n\n{ctx}"
 
-    # structured output은 gpt-4o / gpt-4o-mini 모두 지원
-    model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+    model = os.getenv("LLM_MODEL", "claude-sonnet-4-6")
 
     try:
-        from openai import AsyncOpenAI
+        from anthropic import AsyncAnthropic
 
-        client = AsyncOpenAI(api_key=api_key)
-        response = await client.beta.chat.completions.parse(
+        client = AsyncAnthropic(api_key=api_key)
+        response = await client.messages.create(
             model=model,
+            max_tokens=4096,
             temperature=0,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            response_format=_AnalysisSchema,
+            system=_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+            tools=[{
+                "name": "output_analysis",
+                "description": "종합 분석 결과를 구조화된 형식으로 출력",
+                "input_schema": _AnalysisSchema.model_json_schema(),
+            }],
+            tool_choice={"type": "tool", "name": "output_analysis"},
         )
 
-        parsed: Optional[_AnalysisSchema] = response.choices[0].message.parsed
+        parsed: Optional[_AnalysisSchema] = None
+        for block in response.content:
+            if block.type == "tool_use":
+                parsed = _AnalysisSchema(**block.input)
+                break
+
         if parsed is None:
             logger.error("structured output 결과가 None [ticker=%s]", ticker)
             return None
@@ -422,4 +430,4 @@ if __name__ == "__main__":
             for i in result.impacts:
                 print(f"  {i['ticker']} {i['name']} ({i['direction']}, {i['confidence']:.0%}): {i['reason']}")
     else:
-        print("분석 실패 (OPENAI_API_KEY 확인 필요)")
+        print("분석 실패 (ANTHROPIC_API_KEY 확인 필요)")
