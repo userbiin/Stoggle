@@ -70,6 +70,11 @@ app.conf.beat_schedule = {
         "task": "tasks.crawl_all_news",
         "schedule": crontab(minute=0),
     },
+    # 카테고리(정치/사회/경제) 뉴스 수집 (1시간) — Naver News Open API
+    "crawl-category-news": {
+        "task": "tasks.crawl_category_news",
+        "schedule": crontab(minute=0),
+    },
     # 주요 종목 뉴스 사전 수집 (매일 오전 8시 30분)
     "prefetch-news-daily": {
         "task": "tasks.prefetch_news_for_major_stocks",
@@ -422,6 +427,108 @@ def crawl_all_news(self):
         dedup_and_index_news.delay(news_for_dedup)
 
     return {"status": "ok", "crawled": results}
+
+
+@app.task(bind=True, max_retries=2, default_retry_delay=120)
+def crawl_category_news(self):
+    """
+    네이버 뉴스 Open API로 정치/사회/경제 카테고리 뉴스 수집 (매시간).
+
+    crawl_all_news(종목별)와 독립된 파이프라인. 시장 전체에 영향을 줄 수 있는
+    거시 뉴스를 수집하여 KOSPI200 전종목 대상으로 영향 종목을 판별한다.
+
+    흐름:
+      1. naver_news_crawler.fetch_all_news() — 정치/사회/경제 키워드 크롤링
+      2. NewsCache DB에 upsert (ticker = 카테고리명: "경제"/"사회"/"정치")
+      3. summary_agent 병렬 요약 → NewsCache.summary 갱신
+      4. KOSPI200 전종목 relevance_agent 판별 (Ollama 다운 시 prefilter fallback)
+      5. dedup_and_index_news 체이닝
+    NAVER_CLIENT_ID/SECRET 미설정 시 즉시 skip.
+    """
+    if not os.getenv("NAVER_CLIENT_ID") or not os.getenv("NAVER_CLIENT_SECRET"):
+        return {"status": "skip", "reason": "NAVER_CLIENT_ID/SECRET 미설정"}
+
+    import html as _html
+    import re as _re
+    from agents.naver_news_crawler import fetch_all_news
+    from agents.relevance_agent import Article as RelevArticle, run as relevance_run
+
+    def _strip_html(text: str) -> str:
+        """Naver API 응답의 HTML 태그·엔티티 제거."""
+        return _re.sub(r"<[^>]+>", "", _html.unescape(text or "")).strip()
+
+    # 1. 카테고리 뉴스 수집
+    try:
+        raw_items = asyncio.run(fetch_all_news())
+    except Exception as e:
+        logger.error("카테고리 뉴스 수집 실패: %s", e)
+        return {"status": "error", "reason": str(e)}
+
+    if not raw_items:
+        return {"status": "ok", "collected": 0}
+
+    logger.info("카테고리 뉴스 수집: %d건", len(raw_items))
+
+    # Naver API dict → _save_news_to_db 호환 객체
+    class _Item:
+        __slots__ = ("url", "title", "summary", "source", "published_at", "sentiment", "category")
+
+        def __init__(self, d: dict):
+            self.url = d.get("link", "")
+            self.title = _strip_html(d.get("title", ""))
+            self.summary = _strip_html(d.get("description", ""))
+            self.source = ""
+            self.published_at = d.get("pubDate", "")
+            self.sentiment = "neutral"
+            self.category = d.get("category", "경제")
+
+    items = [_Item(d) for d in raw_items if d.get("link")]
+    if not items:
+        return {"status": "ok", "collected": 0}
+
+    # 2. NewsCache DB upsert — ticker = 카테고리명 ("경제", "사회", "정치")
+    url_to_id: dict[str, int] = {}
+    cat_groups: dict[str, list] = {}
+    for item in items:
+        cat_groups.setdefault(item.category, []).append(item)
+
+    for category, cat_items in cat_groups.items():
+        url_to_id.update(_save_news_to_db(category, cat_items))
+
+    # 3. summary_agent 병렬 요약
+    try:
+        asyncio.run(_summarize_articles("MARKET", [i.url for i in items]))
+    except Exception as e:
+        logger.warning("카테고리 뉴스 요약 실패: %s", e)
+
+    # 4. KOSPI200 전종목 relevance_agent 판별
+    articles = [
+        RelevArticle(url=i.url, title=i.title, summary=i.summary)
+        for i in items
+    ]
+
+    news_for_dedup: dict[str, list[tuple]] = {}
+    for ticker in KOSPI200_TICKERS:
+        try:
+            scored = asyncio.run(relevance_run(ticker, articles))
+            if scored:
+                news_for_dedup[ticker] = [
+                    (s.article.url, s.article.title, s.article.summary, url_to_id.get(s.article.url))
+                    for s in scored
+                ]
+                logger.info("카테고리 relevance [%s]: %d건", ticker, len(news_for_dedup[ticker]))
+        except Exception as e:
+            logger.warning("relevance 판별 실패 (%s): %s", ticker, e)
+
+    # 5. dedup 체이닝
+    if news_for_dedup:
+        dedup_and_index_news.delay(news_for_dedup)
+
+    return {
+        "status": "ok",
+        "collected": len(items),
+        "relevant_tickers": len(news_for_dedup),
+    }
 
 
 @app.task(bind=True, max_retries=1, default_retry_delay=60)
