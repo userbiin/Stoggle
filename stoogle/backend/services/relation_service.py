@@ -84,7 +84,7 @@ def compute_relations(
     종목명은 Redis 레지스트리에서 동적으로 조회한다.
     """
     from services.stock_service import get_or_build_registry
-    from tasks import KOSPI200_TICKERS
+    from constants import KOSPI200_TICKERS
 
     registry = get_or_build_registry()
 
@@ -140,7 +140,7 @@ def compute_correlations_only(ticker: str) -> int:
     관계 유형 재분류·노드 생성 없이 수치만 갱신하므로 매일 실행에 적합.
     반환값: 상관계수를 계산한 후보 종목 수
     """
-    from tasks import KOSPI200_TICKERS
+    from constants import KOSPI200_TICKERS
 
     candidate_tickers = [t for t in KOSPI200_TICKERS if t != ticker]
     base_series = _fetch_close_series(ticker)

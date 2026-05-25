@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 
 from fastapi import APIRouter
 from models.schemas import InsightResponse
@@ -11,8 +12,10 @@ from services.nlp_service import extract_keywords, summarize_with_llm
 router = APIRouter(tags=["insight"])
 logger = logging.getLogger(__name__)
 
-# asyncio.create_task 결과 레퍼런스 유지 (GC 방지)
 _bg_tasks: set = set()
+_pending_tickers: set[str] = set()  # asyncio fallback 중복 방지
+
+_ANALYSIS_LOCK_TTL = 600  # Redis lock TTL (초)
 
 
 def _load_cached_analysis(ticker: str) -> dict | None:
@@ -36,16 +39,49 @@ def _load_cached_analysis(ticker: str) -> dict | None:
 
 
 async def _run_analysis_background(ticker: str, articles: list) -> None:
-    """
-    analysis_agent.run_and_save()를 백그라운드에서 실행한다.
-    실패해도 메인 응답에 영향을 주지 않는다.
-    """
+    """analysis_agent.run_and_save() asyncio fallback — Redis 미사용 시."""
     try:
         from agents.analysis_agent import run_and_save
         await run_and_save(articles, ticker)
         logger.info("백그라운드 분석 완료 [%s]", ticker)
     except Exception as e:
         logger.warning("백그라운드 분석 실패 [%s]: %s", ticker, e)
+    finally:
+        _pending_tickers.discard(ticker)
+
+
+def _trigger_analysis(ticker: str, articles: list) -> None:
+    """
+    Celery 가용 시 analyze_single_ticker.delay() 트리거,
+    Redis 미응답 시 asyncio 백그라운드로 fallback.
+    두 경로 모두 중복 실행 방지 처리를 포함한다.
+    """
+    # Celery (Redis) 경로
+    try:
+        import redis as _redis
+        r = _redis.from_url(
+            os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+            socket_timeout=0.5,
+        )
+        lock_key = f"analysis:running:{ticker}"
+        if r.set(lock_key, "1", nx=True, ex=_ANALYSIS_LOCK_TTL):
+            from tasks import analyze_single_ticker
+            analyze_single_ticker.delay(ticker)
+            logger.info("Celery 분석 트리거 [%s]", ticker)
+        else:
+            logger.debug("분석 이미 실행 중, 건너뜀 [%s]", ticker)
+        return
+    except Exception:
+        pass
+
+    # asyncio fallback (in-process 중복 방지)
+    if ticker in _pending_tickers:
+        logger.debug("asyncio 분석 이미 진행 중, 건너뜀 [%s]", ticker)
+        return
+    _pending_tickers.add(ticker)
+    task = asyncio.create_task(_run_analysis_background(ticker, articles))
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
 
 
 @router.get("/insight/{ticker}", response_model=InsightResponse)
@@ -87,9 +123,7 @@ async def get_insight(ticker: str):
             Article(url=n.url, title=n.title, summary=n.summary or "")
             for n in news_items
         ]
-        task = asyncio.create_task(_run_analysis_background(ticker, articles))
-        _bg_tasks.add(task)
-        task.add_done_callback(_bg_tasks.discard)
+        _trigger_analysis(ticker, articles)
 
     return InsightResponse(
         ticker=ticker,
