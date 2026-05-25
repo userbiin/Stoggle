@@ -6,15 +6,46 @@ Celery 자동화 스케줄러
   celery -A tasks beat --loglevel=info
 """
 import os
+import time
 import logging
 import asyncio
 from datetime import datetime, timedelta
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import task_prerun, task_postrun, task_failure
 from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
+# task_id → 시작 시각 (signal 간 공유)
+_task_start_times: dict[str, float] = {}
+
+
+@task_prerun.connect
+def _on_task_start(task_id: str, task, **kw):
+    _task_start_times[task_id] = time.time()
+
+
+@task_postrun.connect
+def _on_task_done(task_id: str, task, retval, state: str, **kw):
+    duration = time.time() - _task_start_times.pop(task_id, time.time())
+    logger.info({
+        "event": "celery_task",
+        "task": task.name,
+        "state": state,
+        "duration_s": round(duration, 2),
+    })
+
+
+@task_failure.connect
+def _on_task_failure(task_id: str, exception: Exception, **kw):
+    logger.error({
+        "event": "celery_task_failure",
+        "task_id": task_id,
+        "error_type": type(exception).__name__,
+        "error": str(exception),
+    })
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 

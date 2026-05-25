@@ -328,11 +328,18 @@ def get_market_cap_info(ticker: str) -> Optional[dict]:
             else None
         )
 
+        def _to_optional_float(val) -> Optional[float]:
+            try:
+                f = float(val)
+                return f if f != 0.0 else None
+            except (TypeError, ValueError):
+                return None
+
         return {
             "market_cap": market_cap,
-            "per": float(row.get("PER", 0)) or None,
-            "pbr": float(row.get("PBR", 0)) or None,
-            "eps": float(row.get("EPS", 0)) or None,
+            "per": _to_optional_float(row.get("PER")),
+            "pbr": _to_optional_float(row.get("PBR")),
+            "eps": _to_optional_float(row.get("EPS")),
         }
     except Exception as e:
         logger.warning(f"시총 정보 조회 실패 ({ticker}): {e}")

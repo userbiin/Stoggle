@@ -18,6 +18,8 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
+from observability import track_llm_call
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -132,6 +134,7 @@ def _prefilter(article: Article, keywords: list[str]) -> bool:
 # 2단계: EXAONE 3.5 문맥 판별
 # ---------------------------------------------------------------------------
 
+@track_llm_call("relevance")
 async def _score_with_exaone(
     ticker: str,
     company_name: str,

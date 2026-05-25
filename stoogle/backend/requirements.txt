@@ -28,6 +28,11 @@ scikit-learn==1.4.1.post1
 # Task queue (선택사항)
 celery==5.3.6
 redis==5.0.3
+flower==2.0.1
+
+# Observability
+prometheus-fastapi-instrumentator==7.0.0
+sentry-sdk[fastapi]==2.20.0
 
 # Utilities
 python-dotenv==1.0.1

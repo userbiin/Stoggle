@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from models.schemas import InsightResponse
-from services.stock_service import get_price_history, get_current_price, get_market_cap_info, get_or_build_registry
+from services.stock_service import get_price_history, get_market_cap_info, get_or_build_registry
 from services.news_service import fetch_news
 from services.nlp_service import extract_keywords, summarize_with_llm
 
@@ -18,7 +18,6 @@ async def get_insight(ticker: str):
     market = meta.get("market", "KOSPI")
 
     price_history = get_price_history(ticker, days=90)
-    price_info = get_current_price(ticker)
     cap_info = get_market_cap_info(ticker)
     news_items = await fetch_news(ticker, page=1)
 
@@ -26,13 +25,9 @@ async def get_insight(ticker: str):
     keywords = extract_keywords(titles) if titles else []
     summary = await summarize_with_llm(ticker, company_name, titles) if titles else None
 
-    # Header price and chart should describe the same latest trading day.
-    # pykrx current-price and history calls can diverge briefly, or Redis may
-    # hold one cache slightly longer than the other, so prefer the latest
-    # history point for the response displayed on the detail page.
-    latest_price = price_info.get("price") if price_info else None
-    change = price_info.get("change") if price_info else None
-    change_amount = price_info.get("change_amount") if price_info else None
+    latest_price = None
+    change = None
+    change_amount = None
     if price_history:
         latest_price = price_history[-1].close
         if len(price_history) >= 2:

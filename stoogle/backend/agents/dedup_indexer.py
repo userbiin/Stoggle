@@ -36,10 +36,7 @@ class Article:
     news_cache_id: Optional[int] = None
 
 
-# ---------------------------------------------------------------------------
 # 임베딩
-# ---------------------------------------------------------------------------
-
 async def _embed_batch(texts: list[str]) -> list[list[float]]:
     """OpenAI text-embedding-3-small 배치 호출"""
     api_key = os.getenv("OPENAI_API_KEY")
@@ -57,10 +54,7 @@ async def _embed_batch(texts: list[str]) -> list[list[float]]:
     return embeddings
 
 
-# ---------------------------------------------------------------------------
 # 유사도 계산
-# ---------------------------------------------------------------------------
-
 def _cosine_sim(a: list[float], b: list[float]) -> float:
     va = np.array(a, dtype=np.float32)
     vb = np.array(b, dtype=np.float32)
@@ -68,10 +62,7 @@ def _cosine_sim(a: list[float], b: list[float]) -> float:
     return float(np.dot(va, vb) / norm) if norm > 0 else 0.0
 
 
-# ---------------------------------------------------------------------------
 # 1단계: 배치 내 중복 제거 (O(n²))
-# ---------------------------------------------------------------------------
-
 def _dedup_within_batch(
     articles: list[Article],
     embeddings: list[list[float]],
@@ -90,10 +81,7 @@ def _dedup_within_batch(
     return list(arts), list(embs)
 
 
-# ---------------------------------------------------------------------------
 # 2단계: DB(pgvector) 비교
-# ---------------------------------------------------------------------------
-
 def _is_db_duplicate(emb: list[float], url: str, db, NewsVector) -> bool:
     """URL 일치 또는 벡터 거리 0.1 이하(유사도 0.9+)이면 중복"""
     if db.query(NewsVector.id).filter(NewsVector.url == url).scalar():
@@ -107,10 +95,7 @@ def _is_db_duplicate(emb: list[float], url: str, db, NewsVector) -> bool:
     return nearest is not None
 
 
-# ---------------------------------------------------------------------------
 # 퍼블릭 API
-# ---------------------------------------------------------------------------
-
 async def run(articles: list[Article]) -> list[Article]:
     """
     중복 제거 후 pgvector에 색인한 기사 목록을 반환.
@@ -185,22 +170,3 @@ async def run(articles: list[Article]) -> list[Article]:
     except ImportError as e:
         logger.error("DB 모듈 임포트 실패: %s", e)
         return unique_articles
-
-
-# ---------------------------------------------------------------------------
-# 직접 실행 (테스트)
-# ---------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    import asyncio
-
-    sample = [
-        Article(url="https://example.com/1", title="반도체 실적 호조", summary="3분기 영업이익 증가"),
-        Article(url="https://example.com/2", title="반도체 실적 호조", summary="3분기 영업이익 증가"),  # 완전 중복
-        Article(url="https://example.com/3", title="HBM 수출 확대", summary="AI 수요 증가로 매출 상승"),
-    ]
-
-    result = asyncio.run(run(sample))
-    print(f"입력: {len(sample)}건 → 출력: {len(result)}건")
-    for a in result:
-        print(f"  [{a.url}] {a.title}")

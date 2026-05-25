@@ -11,6 +11,8 @@ import httpx
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
+from observability import track_llm_call
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -74,6 +76,7 @@ def _quality_score(body: str) -> float:
     return round(length_score * 0.5 + completeness_score * 0.5, 3)
 
 
+@track_llm_call("summary")
 async def _summarize(body: str) -> Optional[str]:
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
