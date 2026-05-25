@@ -64,8 +64,9 @@ async def get_insight(ticker: str):
     news_items = await fetch_news(ticker, page=1)
 
     titles = [n.title for n in news_items]
+    urls = [n.url for n in news_items]
     keywords = extract_keywords(titles) if titles else []
-    summary = await summarize_with_llm(ticker, company_name, titles) if titles else None
+    summary = await summarize_with_llm(ticker, company_name, titles, news_urls=urls) if titles else None
 
     latest_price = None
     change = None

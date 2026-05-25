@@ -187,6 +187,18 @@ async def _score_with_semaphore(
         return (article, score)
 
 
+async def _ollama_available() -> bool:
+    """Ollama 서버 응답 가능 여부 확인 (3초 타임아웃). 실패 시 False 반환."""
+    try:
+        import httpx
+        base = _OLLAMA_BASE_URL.replace("/v1", "")
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"{base}/api/tags")
+            return r.status_code < 500
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # 퍼블릭 API
 # ---------------------------------------------------------------------------
@@ -216,7 +228,14 @@ async def run(ticker: str, articles: list[Article]) -> list[ScoredArticle]:
     if not candidates:
         return []
 
-    # 2단계: Ollama 병렬 스코어링
+    # 2단계: Ollama 병렬 스코어링 (연결 불가 시 1단계 결과 그대로 반환)
+    if not await _ollama_available():
+        logger.warning(
+            "[%s] Ollama 미응답 — 프리필터 통과 %d건 score=4로 그대로 반환",
+            ticker, len(candidates),
+        )
+        return [ScoredArticle(article=a, score=4) for a in candidates]
+
     sem = asyncio.Semaphore(_OLLAMA_CONCURRENCY)
     tasks = [_score_with_semaphore(sem, ticker, company_name, a) for a in candidates]
     scored_pairs = await asyncio.gather(*tasks)

@@ -22,7 +22,10 @@ class _JsonFormatter(logging.Formatter):
         if isinstance(record.msg, dict):
             payload = dict(record.msg)
         else:
-            payload = {"message": record.getMessage()}
+            try:
+                payload = {"message": record.getMessage()}
+            except Exception:
+                payload = {"message": str(record.msg)}
 
         payload.setdefault("level", record.levelname)
         payload.setdefault("logger", record.name)

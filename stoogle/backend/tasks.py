@@ -292,28 +292,128 @@ def update_price_history(self):
 # 뉴스 수집
 # ─────────────────────────────────────────────────────────────────────────────
 
+async def _summarize_articles(ticker: str, urls: list[str]) -> None:
+    """
+    기사 URL 목록을 asyncio.gather로 병렬 요약 후 NewsCache.summary에 저장.
+    개별 실패는 return_exceptions=True로 격리 — 전체 태스크에 영향 없음.
+    품질 점수 0.3 미만 기사는 summary_agent 내부에서 자동 건너뜀.
+    """
+    from agents.summary_agent import run_and_save as summary_save
+
+    results = await asyncio.gather(
+        *[summary_save(u) for u in urls],
+        return_exceptions=True,
+    )
+    ok = sum(1 for r in results if r and not isinstance(r, Exception))
+    logger.info("summary_agent [%s]: %d/%d건 요약 완료", ticker, ok, len(urls))
+
+
+def _save_news_to_db(ticker: str, items) -> dict[str, int]:
+    """
+    뉴스 기사를 NewsCache DB에 upsert하고 {url: id} 매핑을 반환한다.
+
+    같은 URL의 기사가 이미 존재하면 sentiment/category/fetched_at만 갱신한다.
+    DB 오류 시 빈 딕셔너리 반환 (호출자가 id 없이도 계속 진행 가능).
+    """
+    try:
+        from models.db_models import NewsCache, SessionLocal
+        from datetime import datetime as dt
+
+        db = SessionLocal()
+        url_to_id: dict[str, int] = {}
+        try:
+            urls = [i.url for i in items]
+            existing_rows = db.query(NewsCache).filter(NewsCache.url.in_(urls)).all()
+            existing_map = {row.url: row for row in existing_rows}
+
+            now = dt.utcnow()
+            for item in items:
+                if item.url in existing_map:
+                    row = existing_map[item.url]
+                    row.sentiment = item.sentiment
+                    row.category = item.category
+                    row.fetched_at = now
+                    url_to_id[item.url] = row.id
+                else:
+                    row = NewsCache(
+                        ticker=ticker,
+                        title=item.title,
+                        source=item.source,
+                        published_at=item.published_at,
+                        url=item.url,
+                        sentiment=item.sentiment,
+                        summary=item.summary,
+                        category=item.category,
+                        fetched_at=now,
+                    )
+                    db.add(row)
+                    db.flush()  # id 즉시 확보
+                    url_to_id[item.url] = row.id
+
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.warning("NewsCache DB 저장 실패 (%s): %s", ticker, e)
+        finally:
+            db.close()
+
+        return url_to_id
+    except Exception as e:
+        logger.warning("NewsCache DB 연결 실패 (%s): %s", ticker, e)
+        return {}
+
+
 @app.task(bind=True, max_retries=2, default_retry_delay=120)
 def crawl_all_news(self):
     """
     KOSPI200 종목 뉴스 강제 크롤링 + Redis 캐시 갱신 (1시간 주기).
 
-    수집 완료 후 dedup_and_index_news 태스크를 체이닝하여
-    중복 제거 → pgvector 색인까지 이어서 실행한다.
+    수집 완료 후:
+      1. NewsCache DB에 upsert (news_cache_id 확보)
+      2. relevance_agent로 관련 기사 필터링 (Ollama 미응답 시 1단계 프리필터만 적용)
+      3. dedup_and_index_news 태스크 체이닝 → 중복 제거 → pgvector 색인
+         (news_cache_id를 함께 전달하여 NewsVector JOIN 가능)
     """
     from services.news_service import fetch_news
+    from agents.relevance_agent import Article as RelevArticle, run as relevance_run
 
     results = {}
-    news_for_dedup: dict[str, list[tuple[str, str, str]]] = {}
+    # (url, title, summary, news_cache_id) 4-tuple
+    news_for_dedup: dict[str, list[tuple[str, str, str, int | None]]] = {}
 
     for ticker in KOSPI200_TICKERS:
         try:
             items = asyncio.run(fetch_news(ticker, force=True))
             results[ticker] = len(items)
-            if items:
-                # (url, title, summary) 튜플로 직렬화 — Celery 메시지에 담기 위해
-                news_for_dedup[ticker] = [
-                    (i.url, i.title, i.summary or "") for i in items
+            if not items:
+                continue
+
+            # NewsCache DB upsert — news_cache_id 확보 (pgvector JOIN 용)
+            url_to_id = _save_news_to_db(ticker, items)
+
+            # summary_agent 병렬 실행 — 본문 추출 + Claude 요약 → NewsCache.summary 갱신
+            asyncio.run(_summarize_articles(ticker, [i.url for i in items]))
+
+            # relevance_agent 필터링
+            # Ollama 미응답 → _ollama_available() False → 1단계 프리필터 결과 반환 (자동 fallback)
+            articles = [
+                RelevArticle(url=i.url, title=i.title, summary=i.summary or "")
+                for i in items
+            ]
+            try:
+                scored = asyncio.run(relevance_run(ticker, articles))
+                relevant = [
+                    (s.article.url, s.article.title, s.article.summary, url_to_id.get(s.article.url))
+                    for s in scored
                 ]
+                logger.info("relevance 필터 [%s]: %d → %d건", ticker, len(items), len(relevant))
+            except Exception as e:
+                logger.warning("relevance 필터 실패 (%s) — 전체 기사 사용: %s", ticker, e)
+                relevant = [(i.url, i.title, i.summary or "", url_to_id.get(i.url)) for i in items]
+
+            if relevant:
+                news_for_dedup[ticker] = relevant
+
         except Exception as e:
             logger.warning(f"뉴스 크롤링 실패 ({ticker}): {e}")
 
@@ -329,7 +429,9 @@ def dedup_and_index_news(self, news_by_ticker: dict):
     """
     뉴스 중복 제거 + pgvector 색인 (crawl_all_news 후속 태스크).
 
-    news_by_ticker: {ticker: [(url, title, summary), ...]}
+    news_by_ticker: {ticker: [(url, title, summary, news_cache_id), ...]}
+    news_cache_id가 설정되면 NewsVector.news_cache_id를 채워
+    analysis_agent의 _retrieve_similar_news_context() JOIN이 작동한다.
     OPENAI_API_KEY 미설정 시 임베딩 없이 배치 내 중복 제거만 수행한다.
     """
     from agents.dedup_indexer import Article, run as dedup_run
@@ -338,8 +440,8 @@ def dedup_and_index_news(self, news_by_ticker: dict):
     for ticker, raw_items in news_by_ticker.items():
         try:
             articles = [
-                Article(url=url, title=title, summary=summary)
-                for url, title, summary in raw_items
+                Article(url=url, title=title, summary=summary, news_cache_id=news_cache_id)
+                for url, title, summary, news_cache_id in raw_items
             ]
             unique = asyncio.run(dedup_run(articles))
             results[ticker] = {"total": len(articles), "unique": len(unique)}
@@ -357,31 +459,63 @@ def dedup_and_index_news(self, news_by_ticker: dict):
 
 @app.task(bind=True, max_retries=2, default_retry_delay=300)
 def fetch_dart_filings(self):
-    """DART 공시 수집 (매일 오전 8시)"""
+    """
+    DART 공시 수집 + dart_analyzer 연결 (매일 오전 8시).
+
+    흐름:
+      1. dart_fss로 종목별 최근 30일 공시 목록 조회
+      2. 공시 메타데이터를 텍스트로 변환 후 dart_analyzer.run_and_save() 호출
+      3. dart_analysis 테이블에 재무 수치 + 인사이트 저장
+    DART_API_KEY 미설정 시 즉시 skip (재시도 없음).
+    """
+    dart_api_key = os.getenv("DART_API_KEY")
+    if not dart_api_key:
+        return {"status": "skip", "reason": "DART_API_KEY 미설정"}
+
     try:
-        # dart-fss 라이브러리 사용 — API 키 필요
         import dart_fss as dart
-        dart_api_key = os.getenv("DART_API_KEY")
-        if not dart_api_key:
-            return {"status": "skip", "reason": "DART_API_KEY 미설정"}
-
         dart.set_api_key(dart_api_key)
-        results = {}
-        for ticker in KOSPI200_TICKERS:
-            try:
-                # 종목 코드로 최근 공시 조회
-                bgn_de = (datetime.today() - timedelta(days=30)).strftime("%Y%m%d")
-                filings = dart.filings.search(corp_code=ticker, bgn_de=bgn_de, pblntf_ty="A")
-                results[ticker] = len(filings) if filings else 0
-            except Exception as e:
-                logger.warning(f"공시 수집 실패 ({ticker}): {e}")
-
-        return {"status": "ok", "fetched": results}
     except ImportError:
         return {"status": "skip", "reason": "dart-fss 미설치"}
-    except Exception as e:
-        logger.error(f"fetch_dart_filings 실패: {e}")
-        raise self.retry(exc=e)
+
+    from agents.dart_analyzer import run_and_save as dart_analyze
+
+    results = {}
+    for ticker in KOSPI200_TICKERS:
+        try:
+            bgn_de = (datetime.today() - timedelta(days=30)).strftime("%Y%m%d")
+            filings = dart.filings.search(corp_code=ticker, bgn_de=bgn_de, pblntf_ty="A")
+            if not filings:
+                results[ticker] = 0
+                continue
+
+            analyzed = 0
+            for filing in filings[:3]:  # 종목당 최근 3건
+                try:
+                    # dart_fss 공시 객체 → 텍스트 변환
+                    filing_dict = filing.to_dict() if hasattr(filing, "to_dict") else {}
+                    filing_text = "\n".join(
+                        f"{k}: {v}" for k, v in filing_dict.items() if v
+                    ) or str(filing)
+
+                    # rcept_dt: YYYYMMDD → YYYY-MM-DD
+                    rcept_dt = filing_dict.get("rcept_dt", "")
+                    filed_at = (
+                        f"{rcept_dt[:4]}-{rcept_dt[4:6]}-{rcept_dt[6:]}"
+                        if len(rcept_dt) == 8
+                        else None
+                    )
+
+                    asyncio.run(dart_analyze(filing_text, ticker, filed_at=filed_at))
+                    analyzed += 1
+                except Exception as e:
+                    logger.warning("dart_analyzer 처리 실패 (%s): %s", ticker, e)
+
+            results[ticker] = analyzed
+        except Exception as e:
+            logger.warning(f"공시 수집 실패 ({ticker}): {e}")
+
+    return {"status": "ok", "analyzed": results}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -411,18 +545,62 @@ def recompute_correlations(self):
 def update_relation_graphs(self):
     """
     KOSPI200 종목 관계도 풀 갱신 (매주 월요일).
-    상관계수 + DART 공시 기반 관계 유형 재분류까지 수행한다.
+    상관계수 + DART 공시 기반 관계 유형 재분류 후 RelationCache DB에 upsert.
     """
     from services.relation_service import compute_relations
+    from models.db_models import RelationCache, SessionLocal
+    from datetime import datetime as dt
 
     results = {}
     for ticker in KOSPI200_TICKERS:
         try:
             data = compute_relations(ticker)
-            results[ticker] = len(data.get("nodes", []))
+            links = data.get("links", [])
+
+            db = SessionLocal()
+            try:
+                saved = 0
+                for link in links:
+                    related_ticker = link.target
+                    correlation = round(float(link.value), 4)
+                    relation_type = link.type
+                    reason = f"{relation_type} 관계 (상관계수 {correlation:.2f})"
+
+                    existing = (
+                        db.query(RelationCache)
+                        .filter(
+                            RelationCache.ticker == ticker,
+                            RelationCache.related_ticker == related_ticker,
+                        )
+                        .first()
+                    )
+                    if existing:
+                        existing.correlation = correlation
+                        existing.relation_type = relation_type
+                        existing.reason = reason
+                        existing.updated_at = dt.utcnow()
+                    else:
+                        db.add(RelationCache(
+                            ticker=ticker,
+                            related_ticker=related_ticker,
+                            correlation=correlation,
+                            relation_type=relation_type,
+                            reason=reason,
+                        ))
+                    saved += 1
+
+                db.commit()
+                results[ticker] = saved
+                logger.info("[%s] RelationCache upsert %d건", ticker, saved)
+            except Exception as e:
+                db.rollback()
+                logger.error("[%s] RelationCache 저장 실패: %s", ticker, e)
+                results[ticker] = 0
+            finally:
+                db.close()
+
         except Exception as e:
             logger.error("[%s] 관계도 갱신 실패: %s", ticker, e)
-            self.retry(exc=e)
 
     return {"status": "ok", "updated": results}
 
