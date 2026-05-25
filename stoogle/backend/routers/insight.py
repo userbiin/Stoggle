@@ -67,10 +67,9 @@ async def get_insight(ticker: str):
     keywords = extract_keywords(titles) if titles else []
     summary = await summarize_with_llm(ticker, company_name, titles) if titles else None
 
-    # 최신 거래일 기준 가격 정합성 보장 (히스토리 마지막 포인트 우선)
-    latest_price = price_info.get("price") if price_info else None
-    change = price_info.get("change") if price_info else None
-    change_amount = price_info.get("change_amount") if price_info else None
+    latest_price = None
+    change = None
+    change_amount = None
     if price_history:
         latest_price = price_history[-1].close
         if len(price_history) >= 2:
