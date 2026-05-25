@@ -236,6 +236,7 @@ async def run(ticker: str, articles: list[Article]) -> list[ScoredArticle]:
         )
         return [ScoredArticle(article=a, score=4) for a in candidates]
 
+
     sem = asyncio.Semaphore(_OLLAMA_CONCURRENCY)
     tasks = [_score_with_semaphore(sem, ticker, company_name, a) for a in candidates]
     scored_pairs = await asyncio.gather(*tasks)

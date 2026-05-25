@@ -1,0 +1,110 @@
+import os
+import httpx
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+from routers import search, insight, news, relations
+
+load_dotenv()
+
+app = FastAPI(
+    title="Stoogle API",
+    description="주식 종목 인사이트 플랫폼 백엔드",
+    version="0.1.0",
+)
+
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
+_ollama_base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_BASE_URL = _ollama_base if not _ollama_base.endswith("/v1") else _ollama_base[:-3]
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "exaone3.5:7.8b")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in allowed_origins],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(search.router, prefix="/api/v1")
+app.include_router(insight.router, prefix="/api/v1")
+app.include_router(news.router, prefix="/api/v1")
+app.include_router(relations.router, prefix="/api/v1")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=200)
+
+
+@app.get("/health", tags=["health"])
+async def health_check():
+    return {"status": "ok", "version": "0.1.0"}
+
+
+class OllamaAskRequest(BaseModel):
+    prompt: str = Field(..., min_length=1)
+
+
+@app.get("/ollama/health")
+async def ollama_health():
+    return {
+        "status": "ok",
+        "ollama_base_url": OLLAMA_BASE_URL,
+        "model": OLLAMA_MODEL,
+    }
+
+
+@app.post("/ollama/ask")
+async def ollama_ask(req: OllamaAskRequest):
+    payload = {
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {
+                "role": "user",
+                "content": req.prompt,
+            }
+        ],
+        "stream": False,
+        "keep_alive": "30m",
+        "options": {
+            "num_ctx": 8192,
+        },
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=10.0)) as client:
+            response = await client.post(
+                f"{OLLAMA_BASE_URL}/api/chat",
+                json=payload,
+            )
+            response.raise_for_status()
+
+    except httpx.ConnectError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Cannot connect to Ollama server: {e}",
+        ) from e
+
+    except httpx.TimeoutException as e:
+        raise HTTPException(
+            status_code=504,
+            detail="Ollama request timeout",
+        ) from e
+
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=e.response.text,
+        ) from e
+
+    data = response.json()
+
+    return {
+        "model": data.get("model"),
+        "answer": data.get("message", {}).get("content", ""),
+    }

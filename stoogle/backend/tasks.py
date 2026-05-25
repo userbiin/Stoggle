@@ -531,6 +531,7 @@ def crawl_category_news(self):
     }
 
 
+
 @app.task(bind=True, max_retries=1, default_retry_delay=60)
 def dedup_and_index_news(self, news_by_ticker: dict):
     """
@@ -740,7 +741,7 @@ def index_dart_disclosures(self):
     from agents.dart_indexer import run as dart_run
 
     results = {}
-    for ticker in KOSPI200_TICKERS:
+    for ticker in KOSPI200_TICKERS[:30]:
         try:
             count = asyncio.run(dart_run(ticker))
             results[ticker] = count
@@ -750,8 +751,6 @@ def index_dart_disclosures(self):
 
     return {"indexed": results}
 
-
-# ─────────────────────────────────────────────────────────────────────────────
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 장 마감 후 가격 장기 캐싱 (주말/공휴일 대비)
