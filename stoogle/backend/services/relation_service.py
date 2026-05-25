@@ -113,7 +113,7 @@ def compute_relations(
             logger.info("상관계수 계산 제외 (%s-%s): 공통 거래일 부족 또는 데이터 없음", ticker, cand)
             continue
 
-        correlation = round(abs(correlation), 2)
+        correlation = round(correlation, 2)
         rtype = _get_relation_type(correlation)
 
         nodes.append(RelationNode(id=cand, name=cand_name, group=i % 3 + 1, size=size))

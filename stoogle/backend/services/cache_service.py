@@ -58,7 +58,9 @@ def get_ticker_registry() -> Optional[dict]:
         return None
     try:
         raw = client.get(KEY_REGISTRY)
-        return json.loads(raw) if raw else None
+        result = json.loads(raw) if raw else None
+        logger.info({"event": "cache_hit" if result else "cache_miss", "key_prefix": "registry"})
+        return result
     except Exception as e:
         logger.warning(f"레지스트리 조회 실패: {e}")
         return None
@@ -95,7 +97,9 @@ def get_price_cache(ticker: str) -> Optional[dict]:
         return None
     try:
         raw = client.get(f"Stoogle:price:{ticker}")
-        return json.loads(raw) if raw else None
+        result = json.loads(raw) if raw else None
+        logger.info({"event": "cache_hit" if result else "cache_miss", "key_prefix": "price", "ticker": ticker})
+        return result
     except Exception as e:
         logger.warning(f"가격 캐시 조회 실패 ({ticker}): {e}")
         return None
@@ -123,7 +127,9 @@ def get_history_cache(ticker: str) -> Optional[list]:
         return None
     try:
         raw = client.get(f"Stoogle:history:{ticker}")
-        return json.loads(raw) if raw else None
+        result = json.loads(raw) if raw else None
+        logger.info({"event": "cache_hit" if result else "cache_miss", "key_prefix": "history", "ticker": ticker})
+        return result
     except Exception as e:
         logger.warning(f"히스토리 캐시 조회 실패 ({ticker}): {e}")
         return None
@@ -154,7 +160,9 @@ def get_news_cache(ticker: str) -> Optional[list]:
         return None
     try:
         raw = client.get(f"Stoogle:news:{ticker}")
-        return json.loads(raw) if raw else None
+        result = json.loads(raw) if raw else None
+        logger.info({"event": "cache_hit" if result else "cache_miss", "key_prefix": "news", "ticker": ticker})
+        return result
     except Exception as e:
         logger.warning(f"뉴스 캐시 조회 실패 ({ticker}): {e}")
         return None

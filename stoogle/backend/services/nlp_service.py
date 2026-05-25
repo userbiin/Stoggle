@@ -79,14 +79,14 @@ async def summarize_with_llm(
 수치나 구체적인 내용을 포함하되, 투자 권유는 하지 마세요."""
 
     try:
-        client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), timeout=30.0)
         response = await client.messages.create(
             model=os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001"),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=300,
         )
-        return response.content[0].text.strip()
+        return response.content[0].text.strip() if response.content else None
     except Exception:
         return _fallback_summary(company_name, news_titles)
 

@@ -1,14 +1,40 @@
 import os
+import time
+import logging
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 from routers import search, insight, news, relations
+from observability import setup_logging
 
 load_dotenv()
+setup_logging()
+
+logger = logging.getLogger("stoogle.http")
+
+# ── Sentry (에러 트래킹) ────────────────────────────────────────────────────
+_sentry_dsn = os.getenv("SENTRY_DSN")
+if _sentry_dsn:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.celery import CeleryIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        environment=os.getenv("ENV", "development"),
+        integrations=[
+            FastApiIntegration(),
+            CeleryIntegration(),
+            SqlalchemyIntegration(),
+        ],
+        # 10% 요청 샘플링 — 트레이스 비용 절감
+        traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+    )
 
 app = FastAPI(
     title="Stoogle API",
@@ -30,10 +56,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    logger.info({
+        "event": "http_request",
+        "method": request.method,
+        "endpoint": request.url.path,
+        "status_code": response.status_code,
+        "latency_ms": round((time.time() - start) * 1000, 2),
+        "ticker": request.path_params.get("ticker"),
+    })
+    return response
+
 app.include_router(search.router, prefix="/api/v1")
 app.include_router(insight.router, prefix="/api/v1")
 app.include_router(news.router, prefix="/api/v1")
 app.include_router(relations.router, prefix="/api/v1")
+
+# ── Prometheus 메트릭 (/metrics 엔드포인트 자동 노출) ─────────────────────
+from prometheus_fastapi_instrumentator import Instrumentator  # noqa: E402
+Instrumentator().instrument(app).expose(app)
 
 
 @app.get("/favicon.ico", include_in_schema=False)

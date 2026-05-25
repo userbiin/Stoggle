@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: "stoogle-api"
+    scrape_interval: 15s
+    static_configs:
+      # docker-compose 내부에서 호스트 머신의 FastAPI(8000)를 바라봄
+      - targets: ["host.docker.internal:8000"]
+    metrics_path: /metrics
