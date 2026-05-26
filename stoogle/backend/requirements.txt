@@ -39,6 +39,11 @@ sentry-sdk[fastapi]==2.20.0
 # 모델 pull: ollama pull exaone3.5:7.8b
 ollama==0.4.7
 
+# Ollama (로컬 LLM 서버 — Python 클라이언트)
+# 시스템 설치: curl -fsSL https://ollama.com/install.sh | sh
+# 모델 pull: ollama pull exaone3.5:7.8b
+ollama==0.4.7
+
 # Utilities
 python-dotenv==1.0.1
 nest-asyncio==1.6.0

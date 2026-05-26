@@ -144,7 +144,7 @@ See `stoogle/backend/.env` for the active env file (no `.env.example` is committ
 
 ## Other Context Files
 
-`stoggle/CLAUDE_CONTEXT.md` is a Korean-language architecture document written during early planning. Its API response schemas and Celery schedules are partially outdated — treat this file as historical reference, not ground truth. The schemas in `models/schemas.py` and the task table above are authoritative.
+`stoogle/CLAUDE_CONTEXT.md` is a Korean-language architecture document written during early planning. Its API response schemas and Celery schedules are partially outdated — treat this file as historical reference, not ground truth. The schemas in `models/schemas.py` and the task table above are authoritative.
 
 ## Git Workflow
 

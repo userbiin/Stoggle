@@ -136,7 +136,7 @@ def _prefilter(article: Article, keywords: list[str]) -> bool:
 # ---------------------------------------------------------------------------
 
 @track_llm_call("relevance")
-async def _score_with_exaone(
+async def _score_with_ollama(
     ticker: str,
     company_name: str,
     article: Article,
@@ -183,7 +183,7 @@ async def _score_with_semaphore(
     article: Article,
 ) -> tuple[Article, int]:
     async with sem:
-        score = await _score_with_exaone(ticker, company_name, article)
+        score = await _score_with_ollama(ticker, company_name, article)
         return (article, score)
 
 

@@ -467,6 +467,62 @@ def index_dart_disclosures(self):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 장 마감 후 가격 장기 캐싱 (주말/공휴일 대비)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.task(bind=True, max_retries=3, default_retry_delay=60)
+def cache_eod_prices(self):
+    """
+    장 마감 직후(15:35) KOSPI200 종가를 48h TTL로 Redis에 저장한다.
+    주말·공휴일에도 가장 최근 종가를 조회할 수 있도록 캐시를 유지한다.
+    """
+    try:
+        from pykrx import stock as pykrx_stock
+        from services.cache_service import set_price_cache
+
+        TTL_EOD = 60 * 60 * 48  # 48시간 — 주말(토~월)을 포함한 시간
+
+        today = datetime.today().strftime("%Y%m%d")
+        yesterday = (datetime.today() - timedelta(days=1)).strftime("%Y%m%d")
+
+        df = pykrx_stock.get_market_ohlcv_by_ticker(today, market="KOSPI")
+        df_prev = pykrx_stock.get_market_ohlcv_by_ticker(yesterday, market="KOSPI")
+
+        if df is None or df.empty:
+            return {"status": "skip", "reason": "데이터 없음"}
+
+        updated = 0
+        for ticker in KOSPI200_TICKERS:
+            try:
+                if ticker not in df.index:
+                    continue
+                price = float(df.loc[ticker]["종가"])
+                prev_price = (
+                    float(df_prev.loc[ticker]["종가"])
+                    if df_prev is not None and not df_prev.empty and ticker in df_prev.index
+                    else price
+                )
+                change_amount = price - prev_price
+                change_pct = (change_amount / prev_price * 100) if prev_price else 0
+
+                set_price_cache(ticker, {
+                    "price": price,
+                    "change": round(change_pct, 2),
+                    "change_amount": round(change_amount, 0),
+                }, ttl=TTL_EOD)
+                updated += 1
+            except Exception as e:
+                logger.warning(f"EOD 가격 캐싱 실패 ({ticker}): {e}")
+
+        return {"status": "ok", "updated": updated}
+    except ImportError:
+        return {"status": "skip", "reason": "pykrx 미설치"}
+    except Exception as e:
+        logger.error(f"cache_eod_prices 실패: {e}")
+        raise self.retry(exc=e)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 온디맨드 태스크
 # ─────────────────────────────────────────────────────────────────────────────
 

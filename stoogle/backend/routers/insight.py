@@ -52,7 +52,7 @@ async def _run_analysis_background(ticker: str, articles: list) -> None:
 async def get_insight(ticker: str):
     ticker = ticker.upper()
 
-    # 종목명·시장 정보를 레지스트리에서 조회 (KOSPI/KOSDAQ 구분 포함)
+    # 종목명·시장·섹터 정보를 레지스트리에서 조회
     registry = get_or_build_registry()
     meta = registry.get(ticker, {})
     company_name = meta.get("name", ticker)
