@@ -285,48 +285,63 @@ def _save_news_to_db(ticker: str, items) -> dict[str, int]:
     """
     뉴스 기사를 NewsCache DB에 upsert하고 {url: id} 매핑을 반환한다.
 
-    같은 URL의 기사가 이미 존재하면 sentiment/category/fetched_at만 갱신한다.
+    url 컬럼의 UNIQUE 제약을 활용한 ON CONFLICT DO UPDATE로
+    동시 실행 태스크 간 race condition 없이 원자적으로 upsert한다.
     DB 오류 시 빈 딕셔너리 반환 (호출자가 id 없이도 계속 진행 가능).
     """
     try:
-        from models.db_models import NewsCache, SessionLocal
+        from models.db_models import NewsCache, SessionLocal, DATABASE_URL
         from datetime import datetime as dt
+
+        is_postgres = "postgresql" in DATABASE_URL
+        if is_postgres:
+            from sqlalchemy.dialects.postgresql import insert as _upsert
+        else:
+            from sqlalchemy.dialects.sqlite import insert as _upsert
 
         db = SessionLocal()
         url_to_id: dict[str, int] = {}
         try:
-            urls = [i.url for i in items]
-            existing_rows = db.query(NewsCache).filter(NewsCache.url.in_(urls)).all()
-            existing_map = {row.url: row for row in existing_rows}
-
             now = dt.utcnow()
+            urls = []
+
             for item in items:
-                if item.url in existing_map:
-                    row = existing_map[item.url]
-                    row.sentiment = item.sentiment
-                    row.category = item.category
-                    row.fetched_at = now
-                    url_to_id[item.url] = row.id
-                else:
-                    row = NewsCache(
-                        ticker=ticker,
-                        title=item.title,
-                        source=item.source,
-                        published_at=item.published_at,
-                        url=item.url,
-                        sentiment=item.sentiment,
-                        summary=item.summary,
-                        category=item.category,
-                        fetched_at=now,
-                    )
-                    db.add(row)
-                    db.flush()  # id 즉시 확보
-                    url_to_id[item.url] = row.id
+                if not item.url:
+                    continue
+                stmt = _upsert(NewsCache).values(
+                    ticker=ticker,
+                    title=item.title,
+                    source=item.source,
+                    published_at=item.published_at,
+                    url=item.url,
+                    sentiment=item.sentiment,
+                    summary=item.summary,
+                    category=item.category,
+                    fetched_at=now,
+                ).on_conflict_do_update(
+                    index_elements=["url"],
+                    set_={
+                        "sentiment": item.sentiment,
+                        "category": item.category,
+                        "fetched_at": now,
+                    }
+                )
+                db.execute(stmt)
+                urls.append(item.url)
 
             db.commit()
+
+            # upsert 후 ID 일괄 조회 (url이 unique하므로 안정적)
+            if urls:
+                rows = db.query(NewsCache.id, NewsCache.url).filter(
+                    NewsCache.url.in_(urls)
+                ).all()
+                for row_id, row_url in rows:
+                    url_to_id[row_url] = row_id
+
         except Exception as e:
             db.rollback()
-            logger.warning("NewsCache DB 저장 실패 (%s): %s", ticker, e)
+            logger.warning("NewsCache upsert 실패 (%s): %s", ticker, e)
         finally:
             db.close()
 
@@ -630,7 +645,7 @@ def update_relation_graphs(self):
     results = {}
     for ticker in KOSPI200_TICKERS:
         try:
-            data = compute_relations(ticker)
+            data = compute_relations(ticker, use_cache=False)
             links = data.get("links", [])
 
             db = SessionLocal()
@@ -714,8 +729,7 @@ def index_dart_disclosures(self):
             count = asyncio.run(dart_run(ticker))
             results[ticker] = count
         except Exception as e:
-            logger.error("[%s] DART 색인 실패: %s", ticker, e)
-            self.retry(exc=e)
+            logger.warning("[%s] DART 색인 실패: %s", ticker, e)
 
     return {"indexed": results}
 

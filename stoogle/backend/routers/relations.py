@@ -19,7 +19,7 @@ async def get_relations(ticker: str):
         relation_data = {"nodes": [], "links": [], "related_companies": []}
 
     try:
-        impact = await compute_impact(ticker)
+        impact = await compute_impact(ticker, related_companies=relation_data["related_companies"])
     except Exception as e:
         logger.warning("compute_impact 실패 [%s]: %s", ticker, e)
         impact = []

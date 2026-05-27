@@ -24,17 +24,35 @@ TTL_REGISTRY = 60 * 60 * 24 * 7  # 종목 레지스트리: 7일
 
 KEY_REGISTRY = "Stoogle:registry"
 
+# 모듈 레벨 싱글턴 — 프로세스당 한 개의 연결 풀을 재사용
+_client: Optional[Any] = None
+
 
 def _get_client():
-    """Redis 클라이언트 반환. 연결 실패 시 None 반환하여 캐싱을 무음 처리."""
+    """
+    Redis 싱글턴 반환.
+    최초 호출 시 연결 생성 후 모듈 레벨로 보관.
+    Redis 미가용 시 None 반환 (캐싱 비활성화).
+    연결 오류 후 _reset_client() 가 호출되면 다음 요청에서 재연결 시도.
+    """
+    global _client
+    if _client is not None:
+        return _client
     try:
         import redis
         client = redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=2)
         client.ping()
-        return client
+        _client = client
+        return _client
     except Exception as e:
         logger.warning(f"Redis 연결 실패 (캐싱 비활성화): {e}")
         return None
+
+
+def _reset_client() -> None:
+    """연결 오류 감지 시 싱글턴 초기화 — 다음 호출에서 재연결 시도."""
+    global _client
+    _client = None
 
 
 # ---------------------------------------------------------------------------
@@ -42,40 +60,21 @@ def _get_client():
 # ---------------------------------------------------------------------------
 
 def get_ticker_registry() -> Optional[dict]:
-    """
-    Redis에서 종목 레지스트리를 조회한다.
-
-    반환 형태:
-      {
-        "XXXXXX": {"ticker": "XXXXXX", "name": "종목명", "market": "KOSPI"},
-        ...
-      }
-    ticker 키와 name 키 모두 검색에 사용할 수 있도록
-    name_to_tickers 인덱스도 함께 저장된다.
-    """
     client = _get_client()
     if client is None:
         return None
     try:
         raw = client.get(KEY_REGISTRY)
         result = json.loads(raw) if raw else None
-        logger.info({"event": "cache_hit" if result else "cache_miss", "key_prefix": "registry"})
+        logger.debug({"event": "cache_hit" if result else "cache_miss", "key_prefix": "registry"})
         return result
     except Exception as e:
         logger.warning(f"레지스트리 조회 실패: {e}")
+        _reset_client()
         return None
 
 
 def set_ticker_registry(registry: dict) -> bool:
-    """
-    종목 레지스트리를 Redis에 저장한다.
-
-    registry 형태:
-      {
-        "XXXXXX": {"ticker": "XXXXXX", "name": "종목명", "market": "KOSPI"},
-        ...
-      }
-    """
     client = _get_client()
     if client is None:
         return False
@@ -84,6 +83,7 @@ def set_ticker_registry(registry: dict) -> bool:
         return True
     except Exception as e:
         logger.warning(f"레지스트리 저장 실패: {e}")
+        _reset_client()
         return False
 
 
@@ -98,10 +98,11 @@ def get_price_cache(ticker: str) -> Optional[dict]:
     try:
         raw = client.get(f"Stoogle:price:{ticker}")
         result = json.loads(raw) if raw else None
-        logger.info({"event": "cache_hit" if result else "cache_miss", "key_prefix": "price", "ticker": ticker})
+        logger.debug({"event": "cache_hit" if result else "cache_miss", "key_prefix": "price", "ticker": ticker})
         return result
     except Exception as e:
         logger.warning(f"가격 캐시 조회 실패 ({ticker}): {e}")
+        _reset_client()
         return None
 
 
@@ -114,6 +115,7 @@ def set_price_cache(ticker: str, data: dict, ttl: int = TTL_PRICE) -> bool:
         return True
     except Exception as e:
         logger.warning(f"가격 캐시 저장 실패 ({ticker}): {e}")
+        _reset_client()
         return False
 
 
@@ -128,10 +130,11 @@ def get_history_cache(ticker: str) -> Optional[list]:
     try:
         raw = client.get(f"Stoogle:history:{ticker}")
         result = json.loads(raw) if raw else None
-        logger.info({"event": "cache_hit" if result else "cache_miss", "key_prefix": "history", "ticker": ticker})
+        logger.debug({"event": "cache_hit" if result else "cache_miss", "key_prefix": "history", "ticker": ticker})
         return result
     except Exception as e:
         logger.warning(f"히스토리 캐시 조회 실패 ({ticker}): {e}")
+        _reset_client()
         return None
 
 
@@ -147,6 +150,7 @@ def set_history_cache(ticker: str, data: list, ttl: int = TTL_HISTORY) -> bool:
         return True
     except Exception as e:
         logger.warning(f"히스토리 캐시 저장 실패 ({ticker}): {e}")
+        _reset_client()
         return False
 
 
@@ -161,10 +165,11 @@ def get_news_cache(ticker: str) -> Optional[list]:
     try:
         raw = client.get(f"Stoogle:news:{ticker}")
         result = json.loads(raw) if raw else None
-        logger.info({"event": "cache_hit" if result else "cache_miss", "key_prefix": "news", "ticker": ticker})
+        logger.debug({"event": "cache_hit" if result else "cache_miss", "key_prefix": "news", "ticker": ticker})
         return result
     except Exception as e:
         logger.warning(f"뉴스 캐시 조회 실패 ({ticker}): {e}")
+        _reset_client()
         return None
 
 
@@ -180,6 +185,7 @@ def set_news_cache(ticker: str, data: list, ttl: int = TTL_NEWS) -> bool:
         return True
     except Exception as e:
         logger.warning(f"뉴스 캐시 저장 실패 ({ticker}): {e}")
+        _reset_client()
         return False
 
 
@@ -195,6 +201,7 @@ def cache_get(key: str) -> Optional[Any]:
         raw = client.get(key)
         return json.loads(raw) if raw else None
     except Exception:
+        _reset_client()
         return None
 
 
@@ -206,4 +213,5 @@ def cache_set(key: str, value: Any, ttl: int = 300) -> bool:
         client.setex(key, ttl, json.dumps(value, ensure_ascii=False, default=str))
         return True
     except Exception:
+        _reset_client()
         return False

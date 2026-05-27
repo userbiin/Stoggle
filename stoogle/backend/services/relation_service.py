@@ -1,4 +1,5 @@
 # 상관계수 기반 연관 기업 관계 도출 서비스
+from datetime import datetime, timedelta
 from typing import Optional
 import logging
 import numpy as np
@@ -73,16 +74,99 @@ def _pearson_corr(
     return corr
 
 
+_RELATION_CACHE_TTL_DAYS = 7
+
+
+def _load_from_db_cache(ticker: str) -> Optional[dict]:
+    """
+    RelationCache DB에서 7일 이내 데이터를 조회한다.
+    유효한 캐시가 있으면 nodes/links/related_companies 딕셔너리 반환,
+    없거나 만료됐으면 None 반환.
+    """
+    try:
+        from models.db_models import RelationCache, SessionLocal
+        from services.stock_service import get_or_build_registry
+
+        cutoff = datetime.utcnow() - timedelta(days=_RELATION_CACHE_TTL_DAYS)
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(RelationCache)
+                .filter(
+                    RelationCache.ticker == ticker,
+                    RelationCache.updated_at >= cutoff,
+                )
+                .order_by(RelationCache.correlation.desc())
+                .limit(9)
+                .all()
+            )
+            if not rows:
+                return None
+
+            registry = get_or_build_registry()
+            center_name = _get_name(ticker, registry)
+
+            nodes = [RelationNode(id=ticker, name=center_name, group=0, size=40)]
+            links = []
+            related = []
+
+            for i, row in enumerate(rows):
+                cand_name = _get_name(row.related_ticker, registry)
+                size = max(10, 28 - i * 2)
+
+                nodes.append(RelationNode(
+                    id=row.related_ticker,
+                    name=cand_name,
+                    group=i % 3 + 1,
+                    size=size,
+                ))
+                links.append(RelationLink(
+                    source=ticker,
+                    target=row.related_ticker,
+                    value=row.correlation,
+                    type=row.relation_type,
+                ))
+                related.append(RelatedCompany(
+                    ticker=row.related_ticker,
+                    name=cand_name,
+                    correlation=row.correlation,
+                    reason=row.reason,
+                ))
+
+            return {
+                "nodes": nodes,
+                "links": links,
+                "related_companies": related[:5],
+            }
+        finally:
+            db.close()
+    except Exception as e:
+        logger.debug("RelationCache 조회 실패 (live 계산으로 fallback): %s", e)
+        return None
+
+
 def compute_relations(
     ticker: str,
     candidate_tickers: Optional[list[str]] = None,
+    use_cache: bool = True,
 ) -> dict:
     """
     주어진 ticker와 후보 종목들 간의 상관계수를 계산하여 관계 데이터를 반환.
 
     candidate_tickers 미지정 시 레지스트리 전종목 중 KOSPI200 기준 상위 9개를 사용.
     종목명은 Redis 레지스트리에서 동적으로 조회한다.
+
+    use_cache=False 이면 RelationCache DB를 건너뛰고 항상 pykrx 라이브 계산을 수행한다.
+    (update_relation_graphs 태스크처럼 캐시를 갱신해야 하는 경우에 사용)
     """
+    # DB 캐시 우선 조회 (candidate_tickers 미지정이고 use_cache=True 인 경우만)
+    if use_cache and candidate_tickers is None:
+        cached = _load_from_db_cache(ticker)
+        if cached is not None:
+            logger.debug("RelationCache DB 캐시 반환 [%s]", ticker)
+            return cached
+        logger.info("RelationCache 캐시 없음 — pykrx 라이브 계산 [%s]", ticker)
+
     from services.stock_service import get_or_build_registry
     from constants import KOSPI200_TICKERS
 
@@ -156,13 +240,17 @@ def compute_correlations_only(ticker: str) -> int:
     return count
 
 
-async def compute_impact(ticker: str) -> list[ImpactItem]:
+async def compute_impact(
+    ticker: str,
+    related_companies: Optional[list] = None,
+) -> list[ImpactItem]:
     """
     영향 종목 추론.
 
     흐름:
       1. 해당 종목의 최신 뉴스 수집 (news_service)
-      2. 상관계수 기반 관계사 목록 조회 (compute_relations)
+      2. 관계사 목록 확보 — related_companies 인자가 있으면 재사용,
+         없으면 compute_relations() 호출 (라우터에서 이미 계산한 경우 중복 방지)
       3. LLM 에이전트가 뉴스를 읽고 관계사 중 영향받을 종목 판단
       4. LLM 미사용 환경(API 키 없음)이면 빈 리스트 반환
     """
@@ -179,11 +267,17 @@ async def compute_impact(ticker: str) -> list[ImpactItem]:
     news_titles = [n.title for n in ranked[:10]]
 
     # 2. 관계사 목록 확보
-    relation_data = compute_relations(ticker)
-    related = [
-        {"ticker": r.ticker, "name": r.name, "reason": r.reason}
-        for r in relation_data.get("related_companies", [])
-    ]
+    if related_companies is not None:
+        related = [
+            {"ticker": r.ticker, "name": r.name, "reason": r.reason}
+            for r in related_companies
+        ]
+    else:
+        relation_data = compute_relations(ticker)
+        related = [
+            {"ticker": r.ticker, "name": r.name, "reason": r.reason}
+            for r in relation_data.get("related_companies", [])
+        ]
 
     if not news_titles or not related:
         return []

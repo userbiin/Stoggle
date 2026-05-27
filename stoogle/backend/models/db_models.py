@@ -65,7 +65,7 @@ class NewsCache(Base):
     title = Column(String(500))
     source = Column(String(100))
     published_at = Column(String(30))
-    url = Column(String(1000))
+    url = Column(String(1000), unique=True)
     sentiment = Column(String(20), default="neutral")
     summary = Column(Text)
     category = Column(String(50))
@@ -182,10 +182,48 @@ def get_db():
         db.close()
 
 
+def migrate_news_cache_url_unique(db_engine=None) -> None:
+    """
+    news_cache.url 에 UNIQUE 인덱스를 추가하는 마이그레이션.
+
+    실행 순서:
+      1. URL 기준 중복 행 제거 (MAX(id) — 가장 최근 행 보존)
+      2. CREATE UNIQUE INDEX IF NOT EXISTS 으로 인덱스 추가
+    이미 인덱스가 존재하면 아무것도 하지 않는다.
+    """
+    from sqlalchemy import text, inspect as sa_inspect
+
+    if db_engine is None:
+        db_engine = engine
+
+    insp = sa_inspect(db_engine)
+
+    if not insp.has_table("news_cache"):
+        print("news_cache 테이블 없음 — skip")
+        return
+
+    indexes = insp.get_indexes("news_cache")
+    if any(idx.get("unique") and "url" in idx.get("column_names", []) for idx in indexes):
+        print("news_cache.url UNIQUE 인덱스 이미 존재 — skip")
+        return
+
+    with db_engine.begin() as conn:
+        conn.execute(text(
+            "DELETE FROM news_cache WHERE id NOT IN ("
+            "  SELECT MAX(id) FROM news_cache GROUP BY url"
+            ")"
+        ))
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_news_cache_url ON news_cache(url)"
+        ))
+    print("news_cache.url UNIQUE 인덱스 추가 완료")
+
+
 if __name__ == "__main__":
     if PGVECTOR_AVAILABLE and not DATABASE_URL.startswith("sqlite"):
         with engine.connect() as conn:
             conn.execute(__import__("sqlalchemy").text("CREATE EXTENSION IF NOT EXISTS vector"))
             conn.commit()
     Base.metadata.create_all(bind=engine)
+    migrate_news_cache_url_unique()
     print("DB 테이블 생성 완료:", DATABASE_URL)
