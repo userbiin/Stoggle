@@ -227,7 +227,7 @@ def build_ticker_registry() -> dict:
     # get_market_ticker_list 가 빈 결과를 반환하는 환경(KRX API 제한 등)에 대한 fallback
     if not registry:
         logger.warning("전종목 리스트 조회 불가 — KOSPI200 fallback으로 레지스트리 구축")
-        from tasks import _KOSPI200_FALLBACK
+        from services.kospi200 import KOSPI200_FALLBACK as _KOSPI200_FALLBACK
         for ticker in _KOSPI200_FALLBACK:
             name = _get_ticker_name(ticker)
             registry[ticker] = {"ticker": ticker, "name": name, "market": "KOSPI", "sector": ""}

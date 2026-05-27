@@ -22,7 +22,12 @@ class _JsonFormatter(logging.Formatter):
         if isinstance(record.msg, dict):
             payload = dict(record.msg)
         else:
-            payload = {"message": record.getMessage()}
+            try:
+                payload = {"message": record.getMessage()}
+            except TypeError:
+                # pykrx 등 써드파티 라이브러리가 logging.info(tuple, {}) 형태로
+                # 호출할 때 % 포매팅 실패 → msg를 문자열로 직접 변환
+                payload = {"message": str(record.msg)}
 
         payload.setdefault("level", record.levelname)
         payload.setdefault("logger", record.name)

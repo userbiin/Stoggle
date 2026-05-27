@@ -18,7 +18,7 @@ try:
 except ImportError:
     PGVECTOR_AVAILABLE = False
 
-EMBED_DIM = 1536  # text-embedding-3-small
+EMBED_DIM = 1024  # voyage-3 (Voyage AI)
 
 load_dotenv()
 

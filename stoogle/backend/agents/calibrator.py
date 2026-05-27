@@ -125,21 +125,19 @@ def _isotonic_calibrate(
 
 
 async def _embed_texts(texts: list[str]) -> list[list[float]]:
-    """OpenAI text-embedding-3-small 배치 임베딩. 실패 시 빈 리스트 반환."""
-    api_key = os.getenv("OPENAI_API_KEY")
+    """Voyage AI voyage-3 배치 임베딩. 실패 시 빈 리스트 반환."""
+    api_key = os.getenv("VOYAGE_API_KEY")
     if not api_key or not texts:
         return []
     try:
-        from openai import AsyncOpenAI
+        import voyageai
         from agents.dedup_indexer import EMBED_MODEL, EMBED_BATCH_SIZE
 
-        client = AsyncOpenAI(api_key=api_key)
+        client = voyageai.AsyncClient(api_key=api_key)
         embeddings: list[list[float]] = []
         for i in range(0, len(texts), EMBED_BATCH_SIZE):
-            resp = await client.embeddings.create(
-                model=EMBED_MODEL, input=texts[i : i + EMBED_BATCH_SIZE]
-            )
-            embeddings.extend(item.embedding for item in resp.data)
+            result = await client.embed(texts[i : i + EMBED_BATCH_SIZE], model=EMBED_MODEL)
+            embeddings.extend(result.embeddings)
         return embeddings
     except Exception as e:
         logger.warning("임베딩 실패 (pgvector 저장 건너뜀): %s", e)

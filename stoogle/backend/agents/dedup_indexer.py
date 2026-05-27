@@ -22,10 +22,10 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-EMBED_MODEL = "text-embedding-3-small"
-EMBED_DIM = 1536
+EMBED_MODEL = "voyage-3"
+EMBED_DIM = 1024
 COSINE_DIST_THRESHOLD = 0.1   # 1 - 0.9 = 0.1 (유사도 0.9 이상 → 중복)
-EMBED_BATCH_SIZE = 100         # 한 번에 처리할 최대 텍스트 수
+EMBED_BATCH_SIZE = 32          # Voyage AI 배치 한도 (128 최대, 안전하게 32 사용)
 
 
 @dataclass
@@ -38,19 +38,19 @@ class Article:
 
 # 임베딩
 async def _embed_batch(texts: list[str]) -> list[list[float]]:
-    """OpenAI text-embedding-3-small 배치 호출. OPENAI_API_KEY 미설정 시 빈 리스트 반환."""
-    api_key = os.getenv("OPENAI_API_KEY")
+    """Voyage AI voyage-3 배치 호출. VOYAGE_API_KEY 미설정 시 빈 리스트 반환."""
+    api_key = os.getenv("VOYAGE_API_KEY")
     if not api_key:
         return []
 
-    from openai import AsyncOpenAI
-    client = AsyncOpenAI(api_key=api_key)
+    import voyageai
+    client = voyageai.AsyncClient(api_key=api_key)
 
     embeddings: list[list[float]] = []
     for i in range(0, len(texts), EMBED_BATCH_SIZE):
         batch = texts[i : i + EMBED_BATCH_SIZE]
-        response = await client.embeddings.create(model=EMBED_MODEL, input=batch)
-        embeddings.extend(item.embedding for item in response.data)
+        result = await client.embed(batch, model=EMBED_MODEL)
+        embeddings.extend(result.embeddings)
     return embeddings
 
 

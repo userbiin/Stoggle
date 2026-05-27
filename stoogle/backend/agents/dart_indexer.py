@@ -33,8 +33,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 DART_BASE = "https://opendart.fss.or.kr/api"
-EMBED_MODEL = "text-embedding-3-small"
-EMBED_BATCH_SIZE = 100
+EMBED_MODEL = "voyage-3"
+EMBED_BATCH_SIZE = 32
 MAX_TOKENS = 400
 
 # 정기공시 보고서 코드
@@ -254,19 +254,19 @@ def _chunk_section(content: str, max_tokens: int = MAX_TOKENS) -> list[tuple[str
 # ---------------------------------------------------------------------------
 
 async def _embed_batch(texts: list[str]) -> list[list[float]]:
-    """OPENAI_API_KEY 미설정 시 빈 리스트 반환 (pgvector 색인 건너뜀)."""
-    api_key = os.getenv("OPENAI_API_KEY")
+    """VOYAGE_API_KEY 미설정 시 빈 리스트 반환 (pgvector 색인 건너뜀)."""
+    api_key = os.getenv("VOYAGE_API_KEY")
     if not api_key:
         return []
 
-    from openai import AsyncOpenAI
-    client = AsyncOpenAI(api_key=api_key)
+    import voyageai
+    client = voyageai.AsyncClient(api_key=api_key)
 
     embeddings: list[list[float]] = []
     for i in range(0, len(texts), EMBED_BATCH_SIZE):
         batch = texts[i : i + EMBED_BATCH_SIZE]
-        response = await client.embeddings.create(model=EMBED_MODEL, input=batch)
-        embeddings.extend(item.embedding for item in response.data)
+        result = await client.embed(batch, model=EMBED_MODEL)
+        embeddings.extend(result.embeddings)
     return embeddings
 
 
