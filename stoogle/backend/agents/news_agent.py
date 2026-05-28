@@ -22,6 +22,7 @@ except ImportError:
         return f
 
 from services.news_service import fetch_news, rank_news
+from evaluation.observability import track_agent
 import asyncio
 
 
@@ -117,6 +118,17 @@ async def run_news_analysis(ticker: str, company_name: str) -> Optional[str]:
 # 관계사 영향 판단 에이전트 (신규)
 # ─────────────────────────────────────────────────────────────────────────────
 
+@track_agent("news_agent", "news_pipeline")
+async def _call_claude_impact(client, model: str, system: str, user_prompt: str):
+    return await client.messages.create(
+        model=model,
+        system=system,
+        messages=[{"role": "user", "content": user_prompt}],
+        temperature=0,
+        max_tokens=600,
+    )
+
+
 _IMPACT_SYSTEM_PROMPT = """\
 당신은 한국 주식 시장 전문 애널리스트입니다.
 아래 기업의 최신 뉴스 헤드라인을 읽고, 제공된 관계사 목록 중
@@ -179,12 +191,11 @@ async def run_impact_analysis(
 
     try:
         client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        response = await client.messages.create(
-            model=os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001"),
-            system=_IMPACT_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}],
-            temperature=0,
-            max_tokens=600,
+        response = await _call_claude_impact(
+            client,
+            os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001"),
+            _IMPACT_SYSTEM_PROMPT,
+            user_prompt,
         )
         raw = response.content[0].text.strip()
 

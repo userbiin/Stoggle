@@ -26,6 +26,8 @@ from typing import Literal, Optional
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
+from evaluation.observability import track_agent
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
@@ -272,6 +274,27 @@ async def _retrieve_similar_news_context(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# LLM 호출 (track_agent 데코레이터로 호출량·토큰·지연 집계)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@track_agent("analysis_agent", "analysis_pipeline")
+async def _call_claude(client, model: str, user_prompt: str):
+    return await client.messages.create(
+        model=model,
+        max_tokens=4096,
+        temperature=0,
+        system=_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_prompt}],
+        tools=[{
+            "name": "output_analysis",
+            "description": "종합 분석 결과를 구조화된 형식으로 출력",
+            "input_schema": _AnalysisSchema.model_json_schema(),
+        }],
+        tool_choice={"type": "tool", "name": "output_analysis"},
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 퍼블릭 API
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -330,19 +353,7 @@ async def run(
         from anthropic import AsyncAnthropic
 
         client = AsyncAnthropic(api_key=api_key)
-        response = await client.messages.create(
-            model=model,
-            max_tokens=4096,
-            temperature=0,
-            system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}],
-            tools=[{
-                "name": "output_analysis",
-                "description": "종합 분석 결과를 구조화된 형식으로 출력",
-                "input_schema": _AnalysisSchema.model_json_schema(),
-            }],
-            tool_choice={"type": "tool", "name": "output_analysis"},
-        )
+        response = await _call_claude(client, model, user_prompt)
 
         parsed: Optional[_AnalysisSchema] = None
         for block in response.content:
@@ -399,16 +410,19 @@ def _save_prediction_logs(ticker: str, result: "AnalysisResult") -> None:
                 price_info = get_current_price(impact_ticker)
                 base_close = price_info.get("price") if price_info else None
 
+                model_ver = os.getenv("LLM_MODEL", "claude-sonnet-4-6")
                 db.add(PredictionLog(
                     ticker=impact_ticker,
                     source_ticker=ticker,
                     direction=direction,
                     confidence=confidence,
                     reason=reason,
+                    model_version=model_ver,
                     prediction_date=today_str,
                     target_date=target_str,
                     predicted_at=datetime.utcnow(),
                     base_close=base_close,
+                    status="pending",
                 ))
 
             db.commit()
@@ -477,6 +491,26 @@ async def run_and_save(
     # PredictionLog 기록 (calibrator 피드백 루프 Step A)
     if result.impacts:
         _save_prediction_logs(ticker, result)
+
+    # [2-A] 코드 기반 할루시네이션 검증 — 실패해도 결과에 영향 없음
+    if result.impacts:
+        try:
+            from services.stock_service import get_or_build_registry
+            from evaluation.hallucination_check import check_grounding, log_hallucination
+
+            registry = get_or_build_registry()
+            valid_tickers = set(registry.keys())
+            grounding_stats = check_grounding(
+                {"impacts": result.impacts},
+                valid_tickers,
+                articles,
+            )
+            log_hallucination("analysis_agent", "analysis_pipeline", grounding_stats)
+            logger.info(
+                "할루시네이션 검증 완료 [%s]: rate=%.3f", ticker, grounding_stats["hallucination_rate"]
+            )
+        except Exception as e:
+            logger.warning("할루시네이션 검증 실패 (무시): %s", e)
 
     return result
 

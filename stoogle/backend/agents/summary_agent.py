@@ -11,7 +11,7 @@ import httpx
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-from observability import track_llm_call
+from evaluation.observability import track_agent
 
 load_dotenv()
 
@@ -76,7 +76,17 @@ def _quality_score(body: str) -> float:
     return round(length_score * 0.5 + completeness_score * 0.5, 3)
 
 
-@track_llm_call("summary")
+@track_agent("summary_agent", "news_pipeline")
+async def _call_llm_for_summary(client, body: str):
+    return await client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        system="당신은 뉴스 편집자입니다. 주어진 기사 본문을 3문장으로 요약하세요. 핵심 사실만 담고, 의견이나 추측은 제외하세요.",
+        messages=[{"role": "user", "content": f"다음 기사를 3문장으로 요약해주세요:\n\n{body[:3000]}"}],
+        temperature=0.2,
+        max_tokens=300,
+    )
+
+
 async def _summarize(body: str) -> Optional[str]:
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
@@ -85,19 +95,30 @@ async def _summarize(body: str) -> Optional[str]:
     try:
         from anthropic import AsyncAnthropic
         client = AsyncAnthropic(api_key=api_key)
-        response = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            system="당신은 뉴스 편집자입니다. 주어진 기사 본문을 3문장으로 요약하세요. 핵심 사실만 담고, 의견이나 추측은 제외하세요.",
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"다음 기사를 3문장으로 요약해주세요:\n\n{body[:3000]}",
-                },
-            ],
-            temperature=0.2,
-            max_tokens=300,
-        )
-        return response.content[0].text.strip()
+        response = await _call_llm_for_summary(client, body)
+        summary = response.content[0].text.strip()
+
+        # [2-B] LLM-as-Judge 요약 충실도 — 비동기, 실패해도 요약 결과에 영향 없음
+        try:
+            from evaluation.faithfulness import judge_faithfulness_async
+            from evaluation.hallucination_check import log_hallucination
+
+            faith_result = await judge_faithfulness_async(body, summary, client)
+            if faith_result:
+                log_hallucination(
+                    "summary_agent",
+                    "news_pipeline",
+                    {
+                        "checked": 1,
+                        "invalid_ticker": 0,
+                        "missing_evidence": 0,
+                        "faithfulness": faith_result["faithfulness"],
+                    },
+                )
+        except Exception:
+            pass
+
+        return summary
     except Exception as e:
         logger.error("Anthropic 요약 실패: %s", e)
         return None

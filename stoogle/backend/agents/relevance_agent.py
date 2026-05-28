@@ -18,7 +18,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-from observability import track_llm_call
+from evaluation.observability import track_agent
 
 load_dotenv()
 
@@ -135,7 +135,7 @@ def _prefilter(article: Article, keywords: list[str]) -> bool:
 # 2단계: EXAONE 3.5 문맥 판별
 # ---------------------------------------------------------------------------
 
-@track_llm_call("relevance")
+@track_agent("relevance_agent", "news_pipeline")
 async def _score_with_ollama(
     ticker: str,
     company_name: str,

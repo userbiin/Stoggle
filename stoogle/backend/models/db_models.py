@@ -120,14 +120,41 @@ class PredictionLog(Base):
     confidence = Column(Float, nullable=False)                # 원시 confidence 0.0~1.0
     calibrated_confidence = Column(Float)                     # 보정 후 (nullable)
     reason = Column(Text)                                     # 판단 근거 (임베딩용)
+    model_version = Column(String(50))                        # 예측에 사용된 모델 버전
     prediction_date = Column(String(10), index=True)          # D+0 YYYY-MM-DD
     target_date = Column(String(10), index=True)              # D+3 YYYY-MM-DD
     predicted_at = Column(DateTime, default=datetime.utcnow)
-    base_close = Column(Float)                                # D+0 종가
+    base_close = Column(Float)                                # D+0 종가 (look-ahead 방지용 박제값)
     actual_close = Column(Float)                              # D+3 종가 (사후)
     actual_direction = Column(String(10))                     # 실제 방향 (사후)
+    actual_change = Column(Float)                             # D+3 실제 등락률 (사후)
+    abnormal_return = Column(Float)                           # CAR (market model 보정 후, 선택)
     is_correct = Column(Boolean)                              # 방향 일치 여부 (사후)
+    status = Column(String(10), default="pending")            # pending / scored / skipped
     evaluated_at = Column(DateTime)                           # 평가 시각
+
+
+class HallucinationLog(Base):
+    __tablename__ = "hallucination_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    agent = Column(String(50), index=True)
+    module = Column(String(50))
+    checked = Column(Integer, default=0)           # 검증 대상 수
+    invalid_ticker = Column(Integer, default=0)    # 존재하지 않는 종목 수
+    missing_evidence = Column(Integer, default=0)  # 근거 없는 추론 수
+    faithfulness = Column(Float)                   # 요약 충실도 0~1 (summary 전용)
+    logged_at = Column(DateTime, default=datetime.utcnow)
+
+
+class MarketModelParam(Base):
+    __tablename__ = "market_model_params"
+
+    ticker = Column(String(10), primary_key=True)
+    estimation_date = Column(String(10), primary_key=True)  # YYYY-MM-DD
+    alpha = Column(Float)
+    beta = Column(Float)
+    r_squared = Column(Float)
 
 
 if PGVECTOR_AVAILABLE:
@@ -182,10 +209,46 @@ def get_db():
         db.close()
 
 
+def run_migrations() -> None:
+    """
+    기존 테이블에 누락된 컬럼을 추가한다 (멱등).
+    create_all()은 신규 테이블만 생성하고 컬럼 추가는 하지 않으므로
+    이 함수로 ALTER TABLE을 별도 실행한다.
+    """
+    from sqlalchemy import text
+
+    is_sqlite = DATABASE_URL.startswith("sqlite")
+
+    # (table, column, col_type_sql) 순서로 추가할 컬럼 목록
+    columns_to_add = [
+        ("prediction_log", "model_version", "VARCHAR(50)"),
+        ("prediction_log", "actual_change", "FLOAT"),
+        ("prediction_log", "abnormal_return", "FLOAT"),
+        ("prediction_log", "status", "VARCHAR(10) DEFAULT 'pending'"),
+    ]
+
+    with engine.connect() as conn:
+        for table, col, col_type in columns_to_add:
+            try:
+                if is_sqlite:
+                    result = conn.execute(text(f"PRAGMA table_info({table})"))
+                    existing = {row[1] for row in result.fetchall()}
+                    if col not in existing:
+                        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
+                else:
+                    conn.execute(
+                        text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}")
+                    )
+            except Exception:
+                pass  # 이미 존재하는 컬럼은 무시
+        conn.commit()
+
+
 if __name__ == "__main__":
     if PGVECTOR_AVAILABLE and not DATABASE_URL.startswith("sqlite"):
         with engine.connect() as conn:
             conn.execute(__import__("sqlalchemy").text("CREATE EXTENSION IF NOT EXISTS vector"))
             conn.commit()
     Base.metadata.create_all(bind=engine)
-    print("DB 테이블 생성 완료:", DATABASE_URL)
+    run_migrations()
+    print("DB 테이블 생성 + 마이그레이션 완료:", DATABASE_URL)

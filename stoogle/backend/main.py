@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 from routers import search, insight, news, relations
+from evaluation.metrics_api import router as metrics_router
 from observability import setup_logging
 
 load_dotenv()
@@ -75,6 +76,7 @@ app.include_router(search.router, prefix="/api/v1")
 app.include_router(insight.router, prefix="/api/v1")
 app.include_router(news.router, prefix="/api/v1")
 app.include_router(relations.router, prefix="/api/v1")
+app.include_router(metrics_router)
 
 # ── Prometheus 메트릭 (/metrics 엔드포인트 자동 노출) ─────────────────────
 from prometheus_fastapi_instrumentator import Instrumentator  # noqa: E402
