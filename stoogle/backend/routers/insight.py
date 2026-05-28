@@ -95,7 +95,7 @@ async def get_insight(ticker: str):
     market = meta.get("market", "KOSPI")
     sector = meta.get("sector", "")
 
-    price_history = get_price_history(ticker, days=90)
+    price_history = get_price_history(ticker, days=126)
     cap_info = get_market_cap_info(ticker)
     news_items = await fetch_news(ticker, page=1)
 
