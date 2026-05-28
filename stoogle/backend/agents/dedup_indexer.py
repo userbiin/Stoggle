@@ -115,6 +115,10 @@ async def run(articles: list[Article]) -> list[Article]:
         logger.error("임베딩 실패 — 원본 반환: %s", e)
         return articles
 
+    if not embeddings:
+        logger.warning("임베딩 결과 없음 (VOYAGE_API_KEY 미설정?) — 원본 반환")
+        return articles
+
     # 1단계: 배치 내 중복 제거
     unique_articles, unique_embeddings = _dedup_within_batch(articles, embeddings)
     logger.info(

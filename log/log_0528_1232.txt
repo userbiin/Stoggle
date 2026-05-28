@@ -1,0 +1,655 @@
+ker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:55940 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"message": "('20260523', '20260528', '066570')", "level": "INFO", "logger": "root"}
+{"message": "Expecting value: line 1 column 1 (char 0)", "level": "INFO", "logger": "root"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.jpype.JPypeContext in an unnamed module (file:/workspaces/Stoogle/.venv/lib/python3.12/site-packages/org.jpype.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+{"event": "cache_hit", "key_prefix": "news", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"message": "('20260528', '1028')", "level": "INFO", "logger": "root"}
+{"message": "Expecting value: line 1 column 1 (char 0)", "level": "INFO", "logger": "root"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/news/066570", "status_code": 200, "latency_ms": 1939.37, "ticker": "066570", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/news/066570 HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/relations/066570", "status_code": 200, "latency_ms": 1284.94, "ticker": "066570", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/relations/066570 HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/favicon.ico", "status_code": 200, "latency_ms": 6.9, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /favicon.ico HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 15.82, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/news/066570", "status_code": 200, "latency_ms": 5.47, "ticker": "066570", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/news/066570 HTTP/1.1" 200 OK
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/relations/066570", "status_code": 200, "latency_ms": 94.28, "ticker": "066570", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/relations/066570 HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.03, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:34662 - "GET /metrics HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/insight/066570", "status_code": 200, "latency_ms": 20780.51, "ticker": "066570", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/insight/066570 HTTP/1.1" 200 OK
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"message": "('20260523', '20260528', '066570')", "level": "INFO", "logger": "root"}
+{"message": "Expecting value: line 1 column 1 (char 0)", "level": "INFO", "logger": "root"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/insight/066570", "status_code": 200, "latency_ms": 3418.15, "ticker": "066570", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/insight/066570 HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.91, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:41404 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.91, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:37164 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 6.71, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:37150 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.86, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:47626 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.86, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:60686 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.89, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:41854 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 3.18, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:32984 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.92, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:51852 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.83, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:55594 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.69, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:47032 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 4.16, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:46594 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.93, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:46628 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.88, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:42554 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 7.08, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:53214 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.87, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:37986 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.57, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:53058 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.01, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:39106 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 12.76, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:47948 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.87, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:54082 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.9, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:54618 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.87, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:42638 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.92, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:38216 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.28, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:56830 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.34, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:46828 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.9, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:45428 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.86, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:33648 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.98, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:47546 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.86, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:35074 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.91, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:39414 - "GET /metrics HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'services/news_service.py'. Reloading...
+INFO:     Started server process [64192]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.99, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:45402 - "GET /metrics HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'services/news_service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [64192]
+INFO:     Started server process [64252]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.48, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:58986 - "GET /metrics HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'services/news_service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [64252]
+INFO:     Started server process [64406]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'routers/news.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [64406]
+INFO:     Started server process [64461]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.08, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:37516 - "GET /metrics HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'services/relation_service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [64461]
+INFO:     Started server process [64509]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tasks.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [64509]
+INFO:     Started server process [64590]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.94, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:58410 - "GET /metrics HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'agents/news_agent.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [64590]
+INFO:     Started server process [64646]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.82, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:44808 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.76, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:38144 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.5, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:42468 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.52, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:43616 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.6, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:41142 - "GET /metrics HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'tasks.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [64646]
+INFO:     Started server process [65191]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 11.82, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:58480 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.45, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:53314 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.38, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:53352 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.59, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:35998 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.34, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:40012 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.53, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:56232 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.44, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:44956 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.56, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:34436 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.46, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:42638 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.41, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:56656 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.6, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:47978 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.4, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:43204 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.42, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:51256 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.34, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:52720 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.31, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:33928 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.4, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:46612 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.42, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:52952 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.36, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:33130 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.43, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:39028 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.34, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:47582 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.34, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:49326 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.36, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:46742 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.37, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:38638 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"message": "('20260523', '20260528', '066570')", "level": "INFO", "logger": "root"}
+{"message": "Expecting value: line 1 column 1 (char 0)", "level": "INFO", "logger": "root"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.jpype.JPypeContext in an unnamed module (file:/workspaces/Stoogle/.venv/lib/python3.12/site-packages/org.jpype.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+{"event": "cache_hit", "key_prefix": "news", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"message": "('20260528', '1028')", "level": "INFO", "logger": "root"}
+{"message": "Expecting value: line 1 column 1 (char 0)", "level": "INFO", "logger": "root"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/favicon.ico", "status_code": 200, "latency_ms": 4.4, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /favicon.ico HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 6.63, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:44856 - "GET /metrics HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/news/066570", "status_code": 200, "latency_ms": 3108.86, "ticker": "066570", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/news/066570 HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/relations/066570", "status_code": 200, "latency_ms": 3117.59, "ticker": "066570", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/relations/066570 HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/insight/066570", "status_code": 200, "latency_ms": 18131.36, "ticker": "066570", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/insight/066570 HTTP/1.1" 200 OK
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"message": "('20260523', '20260528', '066570')", "level": "INFO", "logger": "root"}
+{"message": "Expecting value: line 1 column 1 (char 0)", "level": "INFO", "logger": "root"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.01, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:42310 - "GET /metrics HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/news/066570", "status_code": 200, "latency_ms": 2244.04, "ticker": "066570", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/news/066570 HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/insight/066570", "status_code": 200, "latency_ms": 3739.1, "ticker": "066570", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/insight/066570 HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/relations/066570", "status_code": 200, "latency_ms": 4986.79, "ticker": "066570", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/relations/066570 HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.88, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:46088 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.85, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:59180 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.95, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:45994 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 3.85, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:55330 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.95, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:37794 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "price", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "price", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "price", "ticker": "003550", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/search", "status_code": 200, "latency_ms": 15.52, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/search?q=lg HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/favicon.ico", "status_code": 200, "latency_ms": 4.09, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /favicon.ico HTTP/1.1" 200 OK
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "price", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "price", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "price", "ticker": "003550", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/search", "status_code": 200, "latency_ms": 7.18, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/search?q=lg HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.07, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:37828 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"message": "('20260523', '20260528', '051910')", "level": "INFO", "logger": "root"}
+{"message": "Expecting value: line 1 column 1 (char 0)", "level": "INFO", "logger": "root"}
+{"event": "cache_miss", "key_prefix": "news", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_miss", "key_prefix": "news", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_miss", "key_prefix": "news", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/favicon.ico", "status_code": 200, "latency_ms": 1.21, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /favicon.ico HTTP/1.1" 200 OK
+{"message": "HTTP Request: GET https://finance.naver.com/item/news_news.naver?code=051910&page=1 \"HTTP/1.1 200 200\"", "level": "INFO", "logger": "httpx"}
+{"message": "HTTP Request: GET https://finance.naver.com/item/news_news.naver?code=051910&page=1 \"HTTP/1.1 200 200\"", "level": "INFO", "logger": "httpx"}
+{"message": "HTTP Request: GET https://finance.naver.com/item/news_news.naver?code=051910&page=1 \"HTTP/1.1 200 200\"", "level": "INFO", "logger": "httpx"}
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/news/051910", "status_code": 200, "latency_ms": 2874.93, "ticker": "051910", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/news/051910 HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/relations/051910", "status_code": 200, "latency_ms": 2927.2, "ticker": "051910", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/relations/051910 HTTP/1.1" 200 OK
+{"event": "cache_hit", "key_prefix": "news", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/insight/051910", "status_code": 200, "latency_ms": 4482.27, "ticker": "051910", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/insight/051910 HTTP/1.1" 200 OK
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"message": "('20260523', '20260528', '051910')", "level": "INFO", "logger": "root"}
+{"message": "Expecting value: line 1 column 1 (char 0)", "level": "INFO", "logger": "root"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/relations/051910", "status_code": 200, "latency_ms": 2444.73, "ticker": "051910", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/relations/051910 HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/news/051910", "status_code": 200, "latency_ms": 2651.48, "ticker": "051910", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/news/051910 HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/insight/051910", "status_code": 200, "latency_ms": 3565.39, "ticker": "051910", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/insight/051910 HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"message": "{\"event\": \"llm_call\", \"key\": \"analysis_pipeline.analysis_agent\", \"status\": \"success\", \"input_tokens\": 3082, \"output_tokens\": 557, \"latency_ms\": 5521.58}", "level": "INFO", "logger": "stoogle.evaluation"}
+{"message": "insight_cache upsert 완료 [ticker=051910, sentiment=positive]", "level": "INFO", "logger": "agents.analysis_agent"}
+{"event": "cache_hit", "key_prefix": "price", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"message": "PredictionLog 저장 완료 [source=051910, 1건]", "level": "INFO", "logger": "agents.analysis_agent"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"message": "할루시네이션 검증 완료 [051910]: rate=1.000", "level": "INFO", "logger": "agents.analysis_agent"}
+{"message": "백그라운드 분석 완료 [051910]", "level": "INFO", "logger": "routers.insight"}
+WARNING:  WatchFiles detected changes in 'services/news_service.py'. Reloading...
+INFO:     Started server process [70783]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.42, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:36904 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.48, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:50508 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.08, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:57130 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.84, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:58564 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.94, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:44930 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"message": "('20260523', '20260528', '051910')", "level": "INFO", "logger": "root"}
+{"message": "Expecting value: line 1 column 1 (char 0)", "level": "INFO", "logger": "root"}
+{"event": "cache_miss", "key_prefix": "news", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_miss", "key_prefix": "news", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"message": "('20260528', '1028')", "level": "INFO", "logger": "root"}
+{"message": "Expecting value: line 1 column 1 (char 0)", "level": "INFO", "logger": "root"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_miss", "key_prefix": "news", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/favicon.ico", "status_code": 200, "latency_ms": 721.96, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /favicon.ico HTTP/1.1" 200 OK
+{"message": "HTTP Request: GET https://finance.naver.com/item/news_news.naver?code=051910&page=1 \"HTTP/1.1 200 200\"", "level": "INFO", "logger": "httpx"}
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.jpype.JPypeContext in an unnamed module (file:/workspaces/Stoogle/.venv/lib/python3.12/site-packages/org.jpype.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+{"message": "HTTP Request: GET https://finance.naver.com/item/news_news.naver?code=051910&page=1 \"HTTP/1.1 200 200\"", "level": "INFO", "logger": "httpx"}
+{"message": "HTTP Request: GET https://finance.naver.com/item/news_news.naver?code=051910&page=1 \"HTTP/1.1 200 200\"", "level": "INFO", "logger": "httpx"}
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 122.25, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:45426 - "GET /metrics HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/relations/051910", "status_code": 200, "latency_ms": 8632.06, "ticker": "051910", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/relations/051910 HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/news/051910", "status_code": 200, "latency_ms": 8672.86, "ticker": "051910", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/news/051910 HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/insight/051910", "status_code": 200, "latency_ms": 15939.88, "ticker": "051910", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/insight/051910 HTTP/1.1" 200 OK
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"message": "('20260523', '20260528', '051910')", "level": "INFO", "logger": "root"}
+{"message": "Expecting value: line 1 column 1 (char 0)", "level": "INFO", "logger": "root"}
+{"event": "cache_hit", "key_prefix": "news", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "cache_hit", "key_prefix": "registry", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "051910", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005930", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000660", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035420", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "207940", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "035720", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "066570", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "005380", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "000270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "cache_hit", "key_prefix": "history", "ticker": "068270", "level": "INFO", "logger": "services.cache_service"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/relations/051910", "status_code": 200, "latency_ms": 2349.2, "ticker": "051910", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/relations/051910 HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/news/051910", "status_code": 200, "latency_ms": 2311.27, "ticker": "051910", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/news/051910 HTTP/1.1" 200 OK
+{"message": "HTTP Request: POST https://api.anthropic.com/v1/messages \"HTTP/1.1 200 OK\"", "level": "INFO", "logger": "httpx"}
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/insight/051910", "status_code": 200, "latency_ms": 2847.82, "ticker": "051910", "level": "INFO", "logger": "stoogle.http"}
+INFO:     None:0 - "GET /api/v1/insight/051910 HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.05, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:39146 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/api/v1/_internal/hallucination-summary", "status_code": 200, "latency_ms": 208.1, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     127.0.0.1:44798 - "GET /api/v1/_internal/hallucination-summary HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 3.04, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:36376 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.06, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:49060 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.98, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:54608 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.94, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:56304 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.97, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:51112 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.97, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:39602 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.98, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:37312 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.97, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:60934 - "GET /metrics HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'services/news_service.py'. Reloading...
+INFO:     Started server process [78593]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.83, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:39662 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.51, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:50958 - "GET /metrics HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'tasks.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [78593]
+Sentry is attempting to send 2 pending events
+Waiting up to 2 seconds
+Press Ctrl-C to quit
+INFO:     Started server process [78826]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tasks.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [78826]
+INFO:     Started server process [78972]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 5.76, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:35522 - "GET /metrics HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'routers/news.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [78972]
+INFO:     Started server process [79107]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.83, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:37960 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 2.23, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:46642 - "GET /metrics HTTP/1.1" 200 OK
+{"event": "http_request", "method": "GET", "endpoint": "/metrics", "status_code": 200, "latency_ms": 1.61, "ticker": null, "level": "INFO", "logger": "stoogle.http"}
+INFO:     172.18.0.2:44648 - "GET /metrics HTTP/1.1" 200 OK
+^CINFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [79107]
+INFO:     Stopping reloader process [40211]
+(.venv) @userbiin ➜ /workspaces/Stoogle/stoogle/backend (feat/1) $ script my_log.txt
+Script started, output log file is 'my_log.txt'.
+@userbiin ➜ /workspaces/Stoogle/stoogle/backend (feat/1) $ 

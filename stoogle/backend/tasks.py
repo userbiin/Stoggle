@@ -127,18 +127,23 @@ from services.kospi200 import KOSPI200_TICKERS, KOSPI200_FALLBACK as _KOSPI200_F
 @app.task(bind=True, max_retries=2, default_retry_delay=120)
 def prefetch_news_for_major_stocks(self):
     """
-    주요 종목 뉴스 page=1을 미리 수집해 Redis에 캐싱한다.
+    주요 종목(상위 30개) 뉴스를 장 시작 전 미리 수집해 Redis에 캐싱한다.
 
-    beat_schedule에 등록된 태스크가 실제로 존재하도록 유지하고,
-    개별 종목 실패는 전체 워커를 멈추지 않도록 결과에 기록한다.
+    크롤링 → 중복 제거 → LLM 랭킹 → Redis 저장 순으로 처리하여
+    crawl_all_news와 동일한 캐시 품질을 보장한다.
     """
     from services.news_service import fetch_news, rank_news
+    from services.cache_service import set_news_cache
 
     results = {}
     for ticker in KOSPI200_TICKERS[:30]:
         try:
             items = asyncio.run(fetch_news(ticker, page=1, force=True))
-            ranked = rank_news(items)
+            if not items:
+                results[ticker] = {"status": "ok", "count": 0}
+                continue
+            ranked = asyncio.run(rank_news(items))
+            set_news_cache(ticker, [i.model_dump() for i in ranked])
             results[ticker] = {"status": "ok", "count": len(ranked)}
         except Exception as e:
             logger.warning("뉴스 사전 수집 실패 (%s): %s", ticker, e)
@@ -264,29 +269,40 @@ def update_price_history(self):
 @app.task(bind=True, max_retries=2, default_retry_delay=120)
 def crawl_all_news(self):
     """
-    KOSPI200 종목 뉴스 강제 크롤링 + Redis 캐시 갱신 (1시간 주기).
+    KOSPI200 종목 뉴스 강제 크롤링 (1시간 주기).
 
-    수집 완료 후 dedup_and_index_news 태스크를 체이닝하여
-    중복 제거 → pgvector 색인까지 이어서 실행한다.
+    크롤링 → 3단계 중복 제거 → LLM 랭킹 → Redis 캐시 저장 순으로 처리.
+    캐시에는 항상 랭킹이 완료된 최종 목록이 저장된다.
+    완료 후 dedup_and_index_news 태스크를 체이닝하여 pgvector 색인을 수행한다.
     """
-    from services.news_service import fetch_news
+    from services.news_service import fetch_news, rank_news
+    from services.cache_service import set_news_cache
 
     results = {}
     news_for_dedup: dict[str, list[tuple[str, str, str]]] = {}
 
     for ticker in KOSPI200_TICKERS:
         try:
+            # fetch_news(force=True): 크롤링 + _dedup_items 적용, 캐시 미저장
             items = asyncio.run(fetch_news(ticker, force=True))
-            results[ticker] = len(items)
-            if items:
-                # (url, title, summary) 튜플로 직렬화 — Celery 메시지에 담기 위해
-                news_for_dedup[ticker] = [
-                    (i.url, i.title, i.summary or "") for i in items
-                ]
+            if not items:
+                results[ticker] = 0
+                continue
+
+            # LLM 랭킹 (실패 시 키워드 폴백)
+            ranked = asyncio.run(rank_news(items))
+
+            # 랭킹 완료된 목록을 Redis에 저장
+            set_news_cache(ticker, [i.model_dump() for i in ranked])
+            results[ticker] = len(ranked)
+
+            news_for_dedup[ticker] = [
+                (i.url, i.title, i.summary or "") for i in ranked
+            ]
         except Exception as e:
             logger.warning(f"뉴스 크롤링 실패 ({ticker}): {e}")
 
-    # 수집 완료 → 중복 제거 + pgvector 색인 태스크 체이닝
+    # pgvector 색인 태스크 체이닝
     if news_for_dedup:
         dedup_and_index_news.delay(news_for_dedup)
 
@@ -299,9 +315,10 @@ def dedup_and_index_news(self, news_by_ticker: dict):
     뉴스 중복 제거 + pgvector 색인 (crawl_all_news 후속 태스크).
 
     news_by_ticker: {ticker: [(url, title, summary), ...]}
-    OPENAI_API_KEY 미설정 시 임베딩 없이 배치 내 중복 제거만 수행한다.
+    VOYAGE_API_KEY 미설정 시 임베딩 없이 원본 목록을 그대로 반환한다.
     """
     from agents.dedup_indexer import Article, run as dedup_run
+    from services.cache_service import get_news_cache, set_news_cache
 
     results = {}
     for ticker, raw_items in news_by_ticker.items():
@@ -311,6 +328,17 @@ def dedup_and_index_news(self, news_by_ticker: dict):
                 for url, title, summary in raw_items
             ]
             unique = asyncio.run(dedup_run(articles))
+
+            # 배치 내 중복 제거 기준 URL 집합으로 Redis 캐시 갱신
+            # (dedup_run 이 원본을 그대로 반환한 경우는 갱신 불필요)
+            if len(unique) < len(articles):
+                unique_urls = {a.url for a in unique}
+                cached = get_news_cache(ticker)
+                if cached:
+                    filtered = [item for item in cached if item.get("url") in unique_urls]
+                    if filtered:
+                        set_news_cache(ticker, filtered)
+
             results[ticker] = {"total": len(articles), "unique": len(unique)}
         except Exception as e:
             logger.warning("dedup 실패 (%s): %s", ticker, e)

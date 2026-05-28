@@ -175,7 +175,7 @@ async def compute_impact(ticker: str) -> list[ImpactItem]:
 
     # 1. 뉴스 수집
     news_items = await fetch_news(ticker)
-    ranked = rank_news(news_items)
+    ranked = await rank_news(news_items)
     news_titles = [n.title for n in ranked[:10]]
 
     # 2. 관계사 목록 확보

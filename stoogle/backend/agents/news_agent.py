@@ -39,7 +39,7 @@ def fetch_stock_news(ticker: str) -> str:
     nest_asyncio.apply()
     loop = asyncio.get_event_loop()
     items = loop.run_until_complete(fetch_news(ticker))
-    ranked = rank_news(items)
+    ranked = loop.run_until_complete(rank_news(items))
     return "\n".join(
         f"[{i.sentiment}] {i.title} ({i.source})"
         for i in ranked[:5]

@@ -1,9 +1,12 @@
 """
 뉴스 크롤링 + 랭킹 서비스 (네이버 금융 뉴스 기반)
 """
+import json
 import logging
+import os
 import re
 from datetime import datetime
+from difflib import SequenceMatcher
 from typing import Optional
 import httpx
 from bs4 import BeautifulSoup
@@ -22,16 +25,66 @@ HEADERS = {
     "Referer": "https://finance.naver.com",
 }
 
+# 제목 유사도 임계값: 이 값 이상이면 동일 기사로 판단
+TITLE_SIMILARITY_THRESHOLD = 0.85
+
+
+def _dedup_items(items: list[NewsItem]) -> list[NewsItem]:
+    """
+    3단계 중복 제거:
+      1. URL 동일
+      2. (제목, 출처) 완전 일치
+      3. 제목 유사도 >= TITLE_SIMILARITY_THRESHOLD (SequenceMatcher)
+
+    네이버 Finance는 동일 기사를 URL 파라미터만 달리해 여러 번 노출하거나,
+    동일 내용을 미세하게 다른 제목으로 반복 제공하는 경우가 있음.
+    """
+    seen_urls: set[str] = set()
+    seen_title_source: set[tuple[str, str]] = set()
+    unique_titles: list[str] = []
+    deduped: list[NewsItem] = []
+
+    for item in items:
+        # 1단계: URL 중복
+        if item.url in seen_urls:
+            logger.debug("URL 중복 제거: %s", item.url)
+            continue
+
+        # 2단계: 제목+출처 완전 일치
+        title_key = (item.title, item.source)
+        if title_key in seen_title_source:
+            logger.debug("제목+출처 중복 제거: %.60s", item.title)
+            continue
+
+        # 3단계: 제목 유사도
+        if any(
+            SequenceMatcher(None, item.title, t).ratio() >= TITLE_SIMILARITY_THRESHOLD
+            for t in unique_titles
+        ):
+            logger.debug("제목 유사도 중복 제거: %.60s", item.title)
+            continue
+
+        seen_urls.add(item.url)
+        seen_title_source.add(title_key)
+        unique_titles.append(item.title)
+        deduped.append(item)
+
+    for idx, item in enumerate(deduped, 1):
+        item.id = idx
+
+    return deduped
+
 
 async def fetch_news(ticker: str, page: int = 1, force: bool = False) -> list[NewsItem]:
     """
     종목 뉴스 반환. Redis 캐시(1시간) → 네이버 금융 크롤링 순으로 시도.
 
-    crawl_all_news Celery 태스크가 1시간마다 page=1 캐시를 워밍업하므로
+    crawl_all_news Celery 태스크가 1시간마다 page=1 캐시를 랭킹 결과로 갱신하므로
     대부분의 요청은 캐시에서 즉시 반환된다.
     page > 1 이거나 캐시 미스인 경우에만 실제 크롤링 수행.
 
-    force=True 이면 캐시를 무시하고 항상 크롤링 (crawl_all_news 전용).
+    force=True 이면 캐시를 무시하고 항상 크롤링 (Celery 태스크 전용).
+    force=True 시 캐싱은 하지 않음 — 태스크가 랭킹 후 직접 캐시에 저장한다.
     """
     from services.cache_service import get_news_cache, set_news_cache
 
@@ -53,7 +106,7 @@ async def fetch_news(ticker: str, page: int = 1, force: bool = False) -> list[Ne
     soup = BeautifulSoup(res.text, "html.parser")
     rows = soup.select("table.type5 tr")
 
-    items = []
+    raw: list[NewsItem] = []
     for i, row in enumerate(rows):
         a_tag = row.select_one("td.title a")
         info_td = row.select_one("td.info")
@@ -68,7 +121,7 @@ async def fetch_news(ticker: str, page: int = 1, force: bool = False) -> list[Ne
         source = info_td.get_text(strip=True) if info_td else ""
         date_str = date_td.get_text(strip=True) if date_td else ""
 
-        items.append(NewsItem(
+        raw.append(NewsItem(
             id=i + 1,
             title=title,
             source=source,
@@ -79,24 +132,20 @@ async def fetch_news(ticker: str, page: int = 1, force: bool = False) -> list[Ne
             category=_categorize(title),
         ))
 
-    items = items[:20]
+    items = _dedup_items(raw)[:20]
 
-    # page=1 크롤링 결과를 캐시에 저장 (다음 요청부터 캐시 hit)
-    if page == 1 and items:
+    # force=False(API 캐시 미스)일 때만 원본을 캐시 — Celery 태스크는 랭킹 후 직접 저장
+    if page == 1 and items and not force:
         set_news_cache(ticker, [i.model_dump() for i in items])
 
     return items
 
 
 def _parse_date(raw: str) -> str:
-    """
-    네이버 날짜 문자열 → ISO 형식
-    """
     raw = raw.strip()
     for fmt in ("%Y.%m.%d %H:%M", "%Y.%m.%d"):
         try:
-            dt = datetime.strptime(raw, fmt)
-            return dt.isoformat()
+            return datetime.strptime(raw, fmt).isoformat()
         except ValueError:
             continue
     return datetime.now().isoformat()
@@ -115,10 +164,54 @@ def _categorize(title: str) -> str:
     return "일반"
 
 
-def rank_news(items: list[NewsItem]) -> list[NewsItem]:
+async def rank_news(items: list[NewsItem]) -> list[NewsItem]:
     """
-    감성 분석 후 중요도 순 정렬 (간단 규칙 기반)
+    Claude로 감성 분석 + 시장 중요도 순 정렬.
+    ANTHROPIC_API_KEY 미설정 또는 호출 실패 시 키워드 기반 폴백.
     """
+    if not items:
+        return items
+    try:
+        import anthropic
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            return _rank_by_heuristic(items)
+
+        titles = "\n".join(f"{i + 1}. {item.title}" for i, item in enumerate(items))
+        client = anthropic.AsyncAnthropic(api_key=api_key)
+        msg = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+            messages=[{"role": "user", "content": (
+                "한국 주식 뉴스 제목들의 감성과 시장 중요도를 분석하세요.\n\n"
+                f"{titles}\n\n"
+                "반드시 JSON 배열로만 응답하세요 (다른 텍스트 없이):\n"
+                '[{"index": 1, "sentiment": "positive", "score": 8}, ...]'
+            )}],
+        )
+        raw = msg.content[0].text.strip()
+        if "```" in raw:
+            raw = raw.split("```")[1].lstrip("json").strip()
+
+        analysis: list[dict] = json.loads(raw)
+        scores: dict[int, tuple[str, int]] = {
+            r["index"]: (r.get("sentiment", "neutral"), int(r.get("score", 5)))
+            for r in analysis
+        }
+        ranked: list[tuple[int, NewsItem]] = []
+        for i, item in enumerate(items, 1):
+            sentiment, score = scores.get(i, ("neutral", 5))
+            item.sentiment = sentiment
+            ranked.append((score, item))
+        ranked.sort(key=lambda x: x[0], reverse=True)
+        return [item for _, item in ranked]
+    except Exception as e:
+        logger.warning("LLM 감성 분석 실패, 키워드 폴백: %s", e)
+        return _rank_by_heuristic(items)
+
+
+def _rank_by_heuristic(items: list[NewsItem]) -> list[NewsItem]:
+    """키워드 기반 감성 분석 + 중요도 정렬 (rank_news 폴백)."""
     positive_words = ["상승", "급등", "호실적", "흑자", "확정", "수혜", "개선", "달성", "돌파"]
     negative_words = ["하락", "급락", "부진", "적자", "우려", "리스크", "제재", "소송", "하향"]
 
