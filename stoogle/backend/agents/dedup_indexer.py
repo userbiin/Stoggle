@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 EMBED_MODEL = "voyage-3"
 EMBED_DIM = 1024
-COSINE_DIST_THRESHOLD = 0.1   # 1 - 0.9 = 0.1 (유사도 0.9 이상 → 중복)
+COSINE_DIST_THRESHOLD = 0.3   # 1 - 0.9 = 0.1 (유사도 0.9 이상 → 중복)
 EMBED_BATCH_SIZE = 32          # Voyage AI 배치 한도 (128 최대, 안전하게 32 사용)
 
 

@@ -1,37 +1,15 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis,
   CartesianGrid, Tooltip, ReferenceLine,
 } from 'recharts';
-
-const PERIODS = [
-  { label: '1M', days: 21 },
-  { label: '3M', days: 63 },
-  { label: '6M', days: 126 },
-  { label: '전체', days: Infinity },
-];
 
 const styles = {
   card: {
     background: 'var(--color-surface)', border: '1px solid var(--color-border)',
     borderRadius: 'var(--radius-md)', padding: '20px', boxShadow: 'var(--shadow-sm)',
   },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' },
-  title: { fontSize: '15px', fontWeight: '600', color: 'var(--color-text-primary)' },
-  tabs: { display: 'flex', gap: '4px' },
-  tab: {
-    padding: '4px 10px', borderRadius: 'var(--radius-sm)',
-    fontSize: '12px', fontWeight: '600', cursor: 'pointer',
-    border: '1px solid transparent', transition: 'all var(--transition)',
-  },
-  tabActive: {
-    background: 'var(--color-accent)', color: '#fff',
-    borderColor: 'var(--color-accent)',
-  },
-  tabInactive: {
-    background: 'transparent', color: 'var(--color-text-secondary)',
-    borderColor: 'var(--color-border)',
-  },
+  title: { fontSize: '15px', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '16px' },
 };
 
 const CustomTooltip = ({ active, payload }) => {
@@ -53,18 +31,13 @@ const CustomTooltip = ({ active, payload }) => {
 };
 
 export default function PriceChart({ history = [], name = '' }) {
-  const [period, setPeriod] = useState('3M');
-
-  const selectedDays = PERIODS.find((p) => p.label === period)?.days ?? Infinity;
-  const data = history.slice(-selectedDays);
-
+  const data = history;
   const prices = data.map((d) => d.close);
   const minPrice = Math.min(...prices);
   const maxPrice = Math.max(...prices);
   const firstClose = data[0]?.close ?? 0;
   const lastClose = data[data.length - 1]?.close ?? 0;
   const isUp = lastClose >= firstClose;
-
   const color = isUp ? '#c5221f' : '#1a73e8';
 
   const tickFormatter = (val) => {
@@ -74,21 +47,7 @@ export default function PriceChart({ history = [], name = '' }) {
 
   return (
     <div style={styles.card}>
-      <div style={styles.header}>
-        <span style={styles.title}>{name} 주가 추이</span>
-        <div style={styles.tabs}>
-          {PERIODS.map((p) => (
-            <button
-              key={p.label}
-              style={{ ...styles.tab, ...(period === p.label ? styles.tabActive : styles.tabInactive) }}
-              onClick={() => setPeriod(p.label)}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
+      <div style={styles.title}>{name} 주가 추이</div>
       <ResponsiveContainer width="100%" height={220}>
         <AreaChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
           <defs>

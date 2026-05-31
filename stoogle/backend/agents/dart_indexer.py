@@ -20,6 +20,7 @@ import asyncio
 import io
 import logging
 import os
+import re
 import zipfile
 from datetime import datetime, timedelta
 from typing import Optional
@@ -156,6 +157,79 @@ async def _fetch_financial_statement(
         except Exception as e:
             logger.debug("재무제표 조회 오류 [%s %s %s]: %s", bsns_year, reprt_code, fs_div, e)
     return []
+
+
+# 특수관계자 거래 조회 대상 계정과목 패턴
+_RELATED_PARTY_ACCT = re.compile(
+    r"특수관계자|관계회사|계열사|종속회사|관련회사", re.IGNORECASE
+)
+
+
+async def _fetch_related_party_section(
+    corp_code: str,
+    bsns_year: str,
+    reprt_code: str,
+    api_key: str,
+) -> list[tuple[str, str]]:
+    """
+    재무제표 전체 항목 중 특수관계자 거래 관련 계정과목을 필터링해
+    (section_title, content) 리스트로 반환한다.
+
+    fnlttSinglAcntAll.json (전체 계정과목 조회)을 사용하며
+    특수관계자/계열사 관련 항목만 섹션으로 구성한다.
+    """
+    for fs_div in ("CFS", "OFS"):
+        params = {
+            "crtfc_key": api_key,
+            "corp_code": corp_code,
+            "bsns_year": bsns_year,
+            "reprt_code": reprt_code,
+            "fs_div": fs_div,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                res = await client.get(f"{DART_BASE}/fnlttSinglAcntAll.json", params=params)
+                res.raise_for_status()
+            data = res.json()
+            items = data.get("list", []) if data.get("status") == "000" else []
+            if not items:
+                continue
+
+            # 특수관계자 관련 계정만 필터
+            related = [
+                item for item in items
+                if _RELATED_PARTY_ACCT.search(item.get("account_nm", ""))
+                or _RELATED_PARTY_ACCT.search(item.get("sj_nm", ""))
+            ]
+            if not related:
+                continue
+
+            # 그룹별 섹션 텍스트 구성
+            sections = []
+            by_sj: dict[str, list[str]] = {}
+            for item in related:
+                sj = item.get("sj_nm", "특수관계자 거래")
+                acct = item.get("account_nm", "").strip()
+                cur_amt = item.get("thstrm_amount", "").strip()
+                prev_amt = item.get("frmtrm_amount", "").strip()
+                if acct:
+                    by_sj.setdefault(sj, []).append(
+                        f"  {acct}: 당기 {cur_amt}원 / 전기 {prev_amt}원"
+                    )
+
+            for sj, lines in by_sj.items():
+                title = f"[특수관계자 거래] {sj} ({bsns_year})"
+                content = f"{title}\n" + "\n".join(lines)
+                sections.append((title, content))
+
+            return sections
+
+        except Exception as e:
+            logger.debug("특수관계자 거래 조회 오류 [%s %s]: %s", bsns_year, reprt_code, e)
+
+    return []
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -341,21 +415,27 @@ async def run(ticker: str) -> int:
             disc_title, disc_content = _format_disclosure_section(disclosures)
             raw_sections.append(("META", disc_title, disc_content))
 
-        # 3. 재무제표 수집 (기간별)
+        # 3. 재무제표 + 특수관계자 거래 수집 (기간별)
         for bsns_year, reprt_code in _target_periods():
             report_label = f"{bsns_year}년 {_REPRT_CODES.get(reprt_code, reprt_code)}"
-            # rcept_no는 보고서마다 다르지만 재무제표 조회는 year+code로 함
             pseudo_rcept = f"{bsns_year}_{reprt_code}"
             if pseudo_rcept in indexed_rcept:
                 logger.debug("[%s] 이미 색인됨: %s", ticker, report_label)
                 continue
 
-            items = await _fetch_financial_statement(corp_code, bsns_year, reprt_code, api_key)
-            if not items:
-                continue
+            # 재무제표 수치 + 특수관계자 거래 섹션 병렬 조회
+            fin_items, related_sections = await asyncio.gather(
+                _fetch_financial_statement(corp_code, bsns_year, reprt_code, api_key),
+                _fetch_related_party_section(corp_code, bsns_year, reprt_code, api_key),
+            )
 
-            for title, content in _format_financial_section(items, report_label):
-                raw_sections.append((pseudo_rcept, title, content))
+            if fin_items:
+                for title, content in _format_financial_section(fin_items, report_label):
+                    raw_sections.append((pseudo_rcept, title, content))
+
+            # 특수관계자 거래 섹션 — 관계 발굴 에이전트가 탐색할 수 있도록 DartChunk 저장
+            for title, content in related_sections:
+                raw_sections.append((f"{pseudo_rcept}_related", title, content))
 
         if not raw_sections:
             logger.info("[%s] 새로 색인할 데이터 없음", ticker)

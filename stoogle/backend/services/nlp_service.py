@@ -14,6 +14,18 @@ try:
 except ImportError:
     ANTHROPIC_AVAILABLE = False
 
+# JVM을 konlpy보다 먼저 시작하여 Restricted Method 경고를 억제
+try:
+    import jpype
+    if not jpype.isJVMStarted():
+        jpype.startJVM(
+            jpype.getDefaultJVMPath(),
+            "--enable-native-access=ALL-UNNAMED",
+            convertStrings=False,
+        )
+except Exception:
+    pass
+
 try:
     from konlpy.tag import Okt
     OKT_AVAILABLE = True

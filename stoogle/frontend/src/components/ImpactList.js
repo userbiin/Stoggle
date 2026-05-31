@@ -3,59 +3,146 @@ import { useNavigate } from 'react-router-dom';
 
 const styles = {
   card: {
-    background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius-md)', padding: '20px', boxShadow: 'var(--shadow-sm)',
+    background: 'var(--color-surface)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-md)',
+    padding: '20px 24px',
+    boxShadow: 'var(--shadow-sm)',
   },
-  title: { fontSize: '15px', fontWeight: '600', marginBottom: '12px', color: 'var(--color-text-primary)' },
-  grid: {
-    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px',
+  header: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '16px',
   },
-  item: {
-    border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
-    padding: '12px 16px', cursor: 'pointer',
-    transition: 'box-shadow var(--transition), border-color var(--transition)',
-    display: 'flex', flexDirection: 'column', gap: '6px',
+  title: {
+    fontSize: '15px',
+    fontWeight: '600',
+    color: 'var(--color-text-primary)',
   },
-  itemTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  name: { fontSize: '14px', fontWeight: '600', color: 'var(--color-text-primary)' },
-  ticker: { fontSize: '11px', color: 'var(--color-text-muted)' },
-  reason: { fontSize: '12px', color: 'var(--color-text-secondary)', lineHeight: '1.4' },
+  chipRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '8px',
+    marginBottom: '20px',
+  },
+  chip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 12px',
+    borderRadius: 'var(--radius-full)',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    border: '1px solid transparent',
+    transition: 'opacity var(--transition)',
+    whiteSpace: 'nowrap',
+  },
+  chipArrow: {
+    fontSize: '10px',
+    fontWeight: '700',
+  },
+  chipTicker: {
+    fontSize: '11px',
+    fontWeight: '400',
+    opacity: 0.7,
+  },
+  divider: {
+    borderTop: '1px solid var(--color-border)',
+    marginBottom: '16px',
+  },
+  insightBox: {
+    background: 'var(--color-accent-light)',
+    border: '1px solid #c5d8f8',
+    borderRadius: 'var(--radius-md)',
+    padding: '14px 18px',
+  },
+  insightHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    marginBottom: '8px',
+  },
+  insightLabel: {
+    fontSize: '12px',
+    fontWeight: '700',
+    color: 'var(--color-accent)',
+    letterSpacing: '0.03em',
+    textTransform: 'uppercase',
+  },
+  insightText: {
+    fontSize: '13px',
+    lineHeight: '1.75',
+    color: '#1a3c6e',
+  },
 };
+
+function buildInsightText(items) {
+  const pos = items.filter((i) => i.impact === 'positive');
+  const neg = items.filter((i) => i.impact === 'negative');
+  const parts = [];
+
+  if (pos.length) {
+    const names = pos.map((i) => i.name).join('·');
+    const reasons = pos.map((i) => i.reason).join(' 또한 ');
+    parts.push(`${names}는 ${reasons}`);
+  }
+  if (neg.length) {
+    const names = neg.map((i) => i.name).join('·');
+    const reasons = neg.map((i) => i.reason).join(' 또한 ');
+    const connector = pos.length ? ' 반면 ' : '';
+    parts.push(`${connector}${names}는 ${reasons}`);
+  }
+
+  return parts.join('. ') + (parts.length ? '.' : '');
+}
 
 export default function ImpactList({ items = [] }) {
   const navigate = useNavigate();
 
   if (!items.length) return null;
 
+  const insightText = buildInsightText(items);
+
   return (
     <div style={styles.card}>
-      <div style={styles.title}>영향 종목</div>
-      <div style={styles.grid}>
+      <div style={styles.header}>
+        <span style={styles.title}>주가 영향 예상 종목</span>
+      </div>
+
+      <div style={styles.chipRow}>
         {items.map((item) => {
           const isPos = item.impact === 'positive';
           return (
-            <div
+            <span
               key={item.ticker}
               style={{
-                ...styles.item,
-                borderColor: isPos ? '#c5d8f8' : '#f8d0cf',
-                background: isPos ? '#fafcff' : '#fff9f9',
+                ...styles.chip,
+                background: isPos ? 'var(--color-positive-bg)' : 'var(--color-negative-bg)',
+                color: isPos ? 'var(--color-positive)' : 'var(--color-negative)',
+                borderColor: isPos ? '#a8d5b5' : '#f5b7b5',
               }}
               onClick={() => navigate(`/company/${item.ticker}`)}
-              onMouseEnter={(e) => e.currentTarget.style.boxShadow = 'var(--shadow-md)'}
-              onMouseLeave={(e) => e.currentTarget.style.boxShadow = 'none'}
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.75')}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+              title={item.reason}
             >
-              <div style={styles.itemTop}>
-                <span style={styles.name}>{item.name}</span>
-                <span className={`badge ${isPos ? 'badge-negative' : 'badge-positive'}`}>
-                  {isPos ? '수혜' : '부정'}
-                </span>
-              </div>
-              <div style={styles.ticker}>{item.ticker}</div>
-              <div style={styles.reason}>{item.reason}</div>
-            </div>
+              <span style={styles.chipArrow}>{isPos ? '▲' : '▼'}</span>
+              {item.name}
+              <span style={styles.chipTicker}>{item.ticker}</span>
+            </span>
           );
         })}
+      </div>
+
+      <div style={styles.divider} />
+
+      <div style={styles.insightBox}>
+        <div style={styles.insightHeader}>
+          <span style={styles.insightLabel}>AI 인사이트</span>
+        </div>
+        <div style={styles.insightText}>{insightText}</div>
       </div>
     </div>
   );

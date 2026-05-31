@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 from sqlalchemy import (
     create_engine, Column, String, Float, Integer,
-    DateTime, Text, Boolean, UniqueConstraint, event,
+    DateTime, Text, Boolean, UniqueConstraint, PrimaryKeyConstraint, event,
 )
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from dotenv import load_dotenv
@@ -90,9 +90,37 @@ class RelationCache(Base):
     correlation = Column(Float)
     relation_type = Column(String(50))
     reason = Column(String(500))
+    # 'correlation': Pearson 상관계수 기반 | 'news': 뉴스 기반 발굴 | 'dart': DART 공시 기반
+    source = Column(String(20), default="correlation")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (UniqueConstraint("ticker", "related_ticker", name="uq_relation"),)
+
+
+class CompanyEdge(Base):
+    """사업 관계 그래프 엣지 테이블 (README: company_edges)
+
+    가격 상관계수 기반 관계가 아닌 DART 공시·뉴스에서 추출한 실제 비즈니스 관계를 저장한다.
+    Pearson 상관계수는 weight 보강 용도로만 사용하고 relation_type 분류에는 사용하지 않는다.
+    """
+    __tablename__ = "company_edges"
+
+    src = Column(String(10), nullable=False)
+    dst = Column(String(10), nullable=False)
+    # supplier | customer | competitor | affiliate | distributor
+    relation_type = Column(String(20), nullable=False)
+    # src→dst 방향성 힌트 (forward | reverse)
+    direction = Column(String(10))
+    # 상관계수·거래비중 등으로 보강되는 엣지 가중치
+    weight = Column(Float)
+    confidence = Column(Float)
+    evidence = Column(Text)          # 근거 문장 (설명가능성)
+    source = Column(String(20))      # dart | news | llm
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        PrimaryKeyConstraint("src", "dst", "relation_type"),
+    )
 
 
 class DartAnalysis(Base):
@@ -225,6 +253,7 @@ def run_migrations() -> None:
         ("prediction_log", "actual_change", "FLOAT"),
         ("prediction_log", "abnormal_return", "FLOAT"),
         ("prediction_log", "status", "VARCHAR(10) DEFAULT 'pending'"),
+        ("relation_cache", "source", "VARCHAR(20) DEFAULT 'correlation'"),
     ]
 
     with engine.connect() as conn:
@@ -241,6 +270,26 @@ def run_migrations() -> None:
                     )
             except Exception:
                 pass  # 이미 존재하는 컬럼은 무시
+
+        # company_edges 인덱스 (src, dst 단방향 조회 최적화)
+        try:
+            if is_sqlite:
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_company_edges_src ON company_edges (src)"
+                ))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_company_edges_dst ON company_edges (dst)"
+                ))
+            else:
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_company_edges_src ON company_edges (src)"
+                ))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_company_edges_dst ON company_edges (dst)"
+                ))
+        except Exception:
+            pass
+
         conn.commit()
 
 

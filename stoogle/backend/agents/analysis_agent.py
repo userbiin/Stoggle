@@ -36,10 +36,6 @@ logger = logging.getLogger(__name__)
 from agents.dedup_indexer import Article  # noqa: E402
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# GPT-4o Structured Output 스키마
-# ─────────────────────────────────────────────────────────────────────────────
-
 class _RelationItem(BaseModel):
     ticker: str = Field(..., description="관계 기업 종목코드")
     name: str = Field(..., description="관계 기업명")
@@ -91,6 +87,7 @@ class AnalysisResult:
 _SYSTEM_PROMPT = """\
 당신은 한국 주식 시장 전문 애널리스트입니다.
 제공된 뉴스 기사·DART 공시 데이터·기업 관계 정보를 종합해 구조화된 분석을 생성하세요.
+오늘의 뉴스 기사·DART 공시 데이터·기업 관계 정보
 
 분석 원칙:
 - events: 오늘 발생한 핵심 이벤트를 중요도 순 3~5개
@@ -102,9 +99,7 @@ _SYSTEM_PROMPT = """\
 """
 
 
-# ─────────────────────────────────────────────────────────────────────────────
 # RAG 컨텍스트 빌더
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _build_dart_context(ticker: str) -> str:
     """DartAnalysis 테이블에서 최신 공시 분석 결과를 텍스트로 반환."""

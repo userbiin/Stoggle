@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const TABS = ['전체', '실적', '기술', '분석', '이슈'];
+const PAGE_SIZE = 5;
 
 const styles = {
   card: {
@@ -8,17 +8,9 @@ const styles = {
     borderRadius: 'var(--radius-md)', padding: '20px', boxShadow: 'var(--shadow-sm)',
     display: 'flex', flexDirection: 'column',
   },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' },
+  header: { marginBottom: '12px' },
   title: { fontSize: '15px', fontWeight: '600', color: 'var(--color-text-primary)' },
-  tabs: { display: 'flex', gap: '4px', flexWrap: 'wrap' },
-  tab: {
-    padding: '3px 10px', borderRadius: '9999px', fontSize: '12px',
-    fontWeight: '600', cursor: 'pointer', border: '1px solid var(--color-border)',
-    transition: 'all var(--transition)',
-  },
-  tabActive: { background: 'var(--color-accent)', color: '#fff', borderColor: 'var(--color-accent)' },
-  tabInactive: { background: 'transparent', color: 'var(--color-text-secondary)' },
-  list: { display: 'flex', flexDirection: 'column', gap: '0', overflow: 'auto', flex: 1 },
+  list: { display: 'flex', flexDirection: 'column', flex: 1 },
   item: {
     padding: '12px 0', borderBottom: '1px solid var(--color-border)',
     cursor: 'pointer',
@@ -31,7 +23,25 @@ const styles = {
   },
   itemMeta: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--color-text-muted)' },
   dot: { width: '4px', height: '4px', borderRadius: '50%', background: 'currentColor', opacity: 0.4 },
-  noNews: { padding: '32px 0', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '14px' },
+  pagination: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--color-border)',
+  },
+  navBtn: {
+    display: 'flex', alignItems: 'center', gap: '4px',
+    padding: '5px 12px', borderRadius: 'var(--radius-sm)',
+    fontSize: '13px', fontWeight: '600', cursor: 'pointer',
+    border: '1px solid var(--color-border)',
+    background: 'var(--color-surface)', color: 'var(--color-text-secondary)',
+    transition: 'all var(--transition)',
+  },
+  navBtnDisabled: {
+    opacity: 0.35, cursor: 'default',
+    border: '1px solid var(--color-border)',
+    background: 'var(--color-surface)', color: 'var(--color-text-muted)',
+  },
+  pageInfo: { fontSize: '13px', color: 'var(--color-text-muted)' },
+  noNews: { padding: '32px 0', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '14px', flex: 1 },
 };
 
 function sentimentBadge(s) {
@@ -48,38 +58,30 @@ function relativeTime(dateStr) {
 }
 
 export default function NewsSection({ news = [] }) {
-  const [tab, setTab] = useState('전체');
+  const [page, setPage] = useState(0);
 
-  const filtered = tab === '전체' ? news : news.filter((n) => n.category === tab);
+  const totalPages = Math.max(1, Math.ceil(news.length / PAGE_SIZE));
+  const pageNews = news.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const canPrev = page > 0;
+  const canNext = page < totalPages - 1;
 
   return (
     <div style={styles.card}>
       <div style={styles.header}>
         <span style={styles.title}>관련 뉴스</span>
-        <div style={styles.tabs}>
-          {TABS.map((t) => (
-            <button
-              key={t}
-              style={{ ...styles.tab, ...(tab === t ? styles.tabActive : styles.tabInactive) }}
-              onClick={() => setTab(t)}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
       </div>
 
       <div style={styles.list}>
-        {filtered.length === 0 ? (
+        {pageNews.length === 0 ? (
           <div style={styles.noNews}>뉴스가 없습니다.</div>
         ) : (
-          filtered.map((n) => (
+          pageNews.map((n) => (
             <div
-              key={n.id}
+              key={n.id ?? n.url}
               style={styles.item}
               onClick={() => n.url !== '#' && window.open(n.url, '_blank')}
-              onMouseEnter={(e) => e.currentTarget.style.opacity = '0.75'}
-              onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.75')}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
             >
               <div style={styles.itemTitle}>{n.title}</div>
               <div style={styles.itemMeta}>
@@ -93,6 +95,28 @@ export default function NewsSection({ news = [] }) {
           ))
         )}
       </div>
+
+      {news.length > PAGE_SIZE && (
+        <div style={styles.pagination}>
+          <button
+            style={canPrev ? styles.navBtn : { ...styles.navBtn, ...styles.navBtnDisabled }}
+            onClick={() => canPrev && setPage((p) => p - 1)}
+            disabled={!canPrev}
+          >
+            ‹ 이전
+          </button>
+          <span style={styles.pageInfo}>
+            {page + 1} / {totalPages}
+          </span>
+          <button
+            style={canNext ? styles.navBtn : { ...styles.navBtn, ...styles.navBtnDisabled }}
+            onClick={() => canNext && setPage((p) => p + 1)}
+            disabled={!canNext}
+          >
+            다음 ›
+          </button>
+        </div>
+      )}
     </div>
   );
 }

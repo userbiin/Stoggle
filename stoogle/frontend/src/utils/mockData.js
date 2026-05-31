@@ -137,11 +137,11 @@ export const mockRelations = {
 };
 
 export const mockImpact = [
-  { ticker: "005387", name: "현대차3우B", impact: "positive", reason: "AI칩 채택 확대 수혜" },
-  { ticker: "009150", name: "삼성전기", impact: "positive", reason: "부품 공급망 수혜" },
-  { ticker: "028260", name: "삼성물산", impact: "positive", reason: "그룹사 호재 동반 반영" },
-  { ticker: "086520", name: "에코프로", impact: "negative", reason: "반도체 투자 확대 → 배터리 투자 축소 우려" },
-  { ticker: "247540", name: "에코프로비엠", impact: "negative", reason: "IT·반도체 섹터 자금 이동" },
+  { ticker: "009150", name: "삼성전기", impact: "positive", reason: "HBM3E 공급 확대로 MLCC·카메라모듈 등 핵심 부품 동반 수주 증가 기대" },
+  { ticker: "028260", name: "삼성물산", impact: "positive", reason: "삼성전자 반도체 파운드리 투자 확대에 따른 건설·EPC 수주 수혜 예상" },
+  { ticker: "000660", name: "SK하이닉스", impact: "positive", reason: "엔비디아 HBM 공급 경쟁 심화로 SK하이닉스 프리미엄 HBM 단가 협상력 강화" },
+  { ticker: "086520", name: "에코프로", impact: "negative", reason: "IT·반도체 섹터로 기관 자금 집중되며 배터리주 단기 수급 약화 우려" },
+  { ticker: "247540", name: "에코프로비엠", impact: "negative", reason: "반도체 설비투자 확대로 전기차 배터리 소재 투자 우선순위 하락 가능성" },
 ];
 
 // 주가 히스토리 생성 헬퍼

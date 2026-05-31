@@ -16,7 +16,7 @@ const COLORS = ['#1a73e8', '#0d47a1', '#1565c0', '#1976d2', '#42a5f5', '#2196f3'
 export default function WordCloudSection({ keywords = [] }) {
   const svgRef = useRef(null);
   const W = 360;
-  const H = 240;
+  const H = 320;
 
   useEffect(() => {
     if (!keywords.length || !svgRef.current) return;
@@ -61,7 +61,7 @@ export default function WordCloudSection({ keywords = [] }) {
   return (
     <div style={styles.card}>
       <div style={styles.title}>주요 키워드</div>
-      <svg ref={svgRef} viewBox={`0 0 ${360} ${240}`} style={styles.svg} />
+      <svg ref={svgRef} viewBox={`0 0 ${360} ${320}`} style={styles.svg} />
     </div>
   );
 }

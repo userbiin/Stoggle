@@ -114,6 +114,11 @@ app.conf.beat_schedule = {
         "task": "tasks.cache_eod_prices",
         "schedule": crontab(hour=15, minute=35, day_of_week="mon-fri"),
     },
+    # 인기 종목 인사이트 캐시 선제 갱신 (매일 오전 8:30 — 장 시작 전)
+    "warmup-popular-tickers": {
+        "task": "tasks.warmup_popular_tickers",
+        "schedule": crontab(hour=8, minute=30),
+    },
 }
 
 # KOSPI 200 구성 종목 — services/kospi200.py에서 관리 (Celery와 분리)
@@ -408,20 +413,49 @@ def recompute_correlations(self):
 def update_relation_graphs(self):
     """
     KOSPI200 종목 관계도 풀 갱신 (매주 월요일).
-    상관계수 + DART 공시 기반 관계 유형 재분류까지 수행한다.
+
+    흐름:
+      1. dart_edge_extractor: DART API(최대주주·임원) + DartChunk regex → company_edges
+      2. relation_discovery_agent: 뉴스+DART LLM → RelationCache(source=news|dart) + company_edges
+      3. compute_correlations_only: Pearson → RelationCache(source=correlation, 발굴 관계 미덮어씀)
     """
-    from services.relation_service import compute_relations
+    from services.relation_service import compute_correlations_only
+    from agents.relation_discovery_agent import discover_relations
+    from agents.dart_edge_extractor import extract_dart_edges
+
+    from services.cache_service import invalidate_edges_cache
 
     results = {}
     for ticker in KOSPI200_TICKERS:
         try:
-            data = compute_relations(ticker)
-            results[ticker] = len(data.get("nodes", []))
+            # 1. DART 구조화 엣지 추출 → company_edges (LLM 불필요, 빠름)
+            dart_edges = asyncio.run(extract_dart_edges(ticker))
+            # 2. 뉴스+DART LLM 관계 발굴 → RelationCache + company_edges
+            discovered = asyncio.run(discover_relations(ticker))
+            # 3. Pearson 상관계수 weight 보강 (관계 유형 분류에는 미사용)
+            corr_count = compute_correlations_only(ticker)
+
+            # company_edges 재구축 완료 → Redis 캐시 무효화 (다음 요청에 새 그래프 반영)
+            invalidate_edges_cache(ticker)
+
+            results[ticker] = {
+                "dart_edges": dart_edges,
+                "discovered": discovered,
+                "corr_cached": corr_count,
+            }
         except Exception as e:
             logger.error("[%s] 관계도 갱신 실패: %s", ticker, e)
-            self.retry(exc=e)
 
     return {"status": "ok", "updated": results}
+
+
+@app.task
+def discover_relations_for_ticker(ticker: str):
+    """단일 종목 관계 발굴 (온디맨드 트리거용)"""
+    from agents.relation_discovery_agent import discover_relations
+
+    count = asyncio.run(discover_relations(ticker))
+    return {"ticker": ticker, "discovered": count}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -448,7 +482,12 @@ def calibrate_predictions(self):
 
 @app.task(bind=True, max_retries=3, default_retry_delay=120)
 def index_dart_disclosures(self):
-    """주요 종목 DART 공시·재무제표 pgvector 색인 (매일 18:00)"""
+    """
+    주요 종목 DART 공시·재무제표 pgvector 색인 (매일 18:00).
+
+    색인 완료 후 dart_edge_extractor를 체이닝하여
+    특수관계자·계열사 정보를 company_edges에 적재한다.
+    """
     from agents.dart_indexer import run as dart_run
 
     results = {}
@@ -460,7 +499,48 @@ def index_dart_disclosures(self):
             logger.error("[%s] DART 색인 실패: %s", ticker, e)
             self.retry(exc=e)
 
+    # DART 색인 완료 후 엣지 추출 태스크 체이닝
+    if results:
+        extract_dart_edges_batch.delay(list(results.keys()))
+
     return {"indexed": results}
+
+
+@app.task(bind=True, max_retries=2, default_retry_delay=60)
+def extract_dart_edges_batch(self, tickers: list[str]):
+    """
+    DART 공시에서 사업 관계 엣지를 추출하여 company_edges에 적재 (index_dart_disclosures 후속).
+
+    tickers: 처리 대상 종목 코드 목록
+    """
+    from agents.dart_edge_extractor import extract_dart_edges
+
+    from services.cache_service import invalidate_edges_cache
+
+    results = {}
+    for ticker in tickers:
+        try:
+            count = asyncio.run(extract_dart_edges(ticker))
+            results[ticker] = count
+            if count > 0:
+                # 새 엣지가 생겼으면 Redis 캐시 무효화
+                invalidate_edges_cache(ticker)
+        except Exception as e:
+            logger.warning("[%s] DART 엣지 추출 실패: %s", ticker, e)
+            results[ticker] = 0
+
+    total = sum(results.values())
+    logger.info("extract_dart_edges_batch 완료: %d개 종목, %d건 엣지 저장", len(results), total)
+    return {"status": "ok", "edges_saved": results, "total": total}
+
+
+@app.task
+def extract_dart_edges_for_ticker(ticker: str):
+    """단일 종목 DART 엣지 추출 (온디맨드)"""
+    from agents.dart_edge_extractor import extract_dart_edges
+
+    count = asyncio.run(extract_dart_edges(ticker))
+    return {"ticker": ticker, "edges_saved": count}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -525,30 +605,100 @@ def cache_eod_prices(self):
 
 @app.task
 def analyze_single_ticker(ticker: str):
-    """단일 종목 인사이트 갱신 (사용자 검색 시 온디맨드 트리거)"""
-    import asyncio
+    """
+    단일 종목 전체 파이프라인 갱신 (온디맨드 트리거).
+
+    흐름:
+      1. 가격 캐시 갱신
+      2. 뉴스 수집 + LLM 요약
+      3. analysis_agent 구조화 분석 → InsightCache
+      4. 관계 발굴 → RelationCache + company_edges
+    """
     from services.news_service import fetch_news
     from services.nlp_service import extract_keywords, summarize_with_llm
-    from services.stock_service import get_current_price, get_price_history
+    from services.stock_service import get_current_price, get_price_history, get_or_build_registry
 
-    # 가격 캐시 갱신
     get_current_price(ticker)
     get_price_history(ticker, days=90)
 
-    # 뉴스 + 분석
     items = asyncio.run(fetch_news(ticker))
     titles = [i.title for i in items]
-    keywords = extract_keywords(titles)
+    extract_keywords(titles)
 
-    # 종목명 조회 (레지스트리 기반, 없으면 ticker 코드 사용)
-    from services.stock_service import get_or_build_registry
     registry = get_or_build_registry()
     company_name = registry.get(ticker, {}).get("name", ticker)
+    asyncio.run(summarize_with_llm(ticker, company_name, titles))
 
-    summary = asyncio.run(summarize_with_llm(ticker, company_name, titles))
+    # analysis_agent 구조화 분석 → InsightCache 저장
+    if items:
+        try:
+            from agents.dedup_indexer import Article
+            from agents.analysis_agent import run_and_save
+            articles = [Article(url=n.url, title=n.title, summary=n.summary or "") for n in items]
+            asyncio.run(run_and_save(articles, ticker))
+        except Exception as e:
+            logger.warning("[%s] analysis_agent 실패: %s", ticker, e)
 
-    return {
-        "ticker": ticker,
-        "keywords": len(keywords),
-        "summary": bool(summary),
-    }
+    # 관계 발굴 → RelationCache + company_edges
+    try:
+        from agents.relation_discovery_agent import discover_relations
+        discovered = asyncio.run(discover_relations(ticker))
+        logger.info("[%s] analyze_single_ticker: 관계 발굴 %d건", ticker, discovered)
+    except Exception as e:
+        logger.warning("[%s] 관계 발굴 실패: %s", ticker, e)
+
+    return {"ticker": ticker, "done": True}
+
+
+@app.task(bind=True, max_retries=1)
+def warmup_popular_tickers(self):
+    """
+    장 시작 전(08:30) KOSPI200 상위 50개 종목 인사이트 캐시를 선제 갱신한다.
+
+    InsightCache가 없거나 6시간 이상 지난 종목만 대상으로 하여
+    불필요한 LLM 재호출을 방지한다.
+    """
+    from services.cache_service import get_news_cache, set_news_cache
+    from services.news_service import fetch_news, rank_news
+    import json as _json
+
+    results: dict[str, str] = {}
+    warmup_targets = KOSPI200_TICKERS[:50]
+
+    for ticker in warmup_targets:
+        try:
+            # InsightCache 만료 여부 확인 (6시간 초과 = 갱신 대상)
+            from models.db_models import InsightCache, SessionLocal
+            from datetime import timezone
+
+            db = SessionLocal()
+            stale = True
+            try:
+                row = db.query(InsightCache).filter(InsightCache.ticker == ticker).first()
+                if row and row.updated_at:
+                    age_h = (datetime.utcnow() - row.updated_at).total_seconds() / 3600
+                    stale = age_h >= 6
+            finally:
+                db.close()
+
+            if not stale:
+                results[ticker] = "fresh"
+                continue
+
+            # 뉴스 강제 갱신
+            items = asyncio.run(fetch_news(ticker, force=True))
+            if items:
+                ranked = asyncio.run(rank_news(items))
+                set_news_cache(ticker, [i.model_dump() for i in ranked])
+
+            # analysis_agent 백그라운드 실행 (Celery 체이닝)
+            analyze_single_ticker.delay(ticker)
+            results[ticker] = "queued"
+        except Exception as e:
+            logger.warning("[%s] warm-up 실패: %s", ticker, e)
+            results[ticker] = f"error: {e}"
+
+    warmed = sum(1 for v in results.values() if v == "queued")
+    fresh = sum(1 for v in results.values() if v == "fresh")
+    logger.info("warmup_popular_tickers 완료: queued=%d fresh=%d", warmed, fresh)
+    return {"status": "ok", "queued": warmed, "fresh": fresh}

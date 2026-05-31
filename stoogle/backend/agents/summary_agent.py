@@ -80,7 +80,7 @@ def _quality_score(body: str) -> float:
 async def _call_llm_for_summary(client, body: str):
     return await client.messages.create(
         model="claude-haiku-4-5-20251001",
-        system="당신은 뉴스 편집자입니다. 주어진 기사 본문을 3문장으로 요약하세요. 핵심 사실만 담고, 의견이나 추측은 제외하세요.",
+        system="당신은 주가 변동 예측에 사용할 뉴스를 편집하는 기능을 수행합니다. 주어진 기사 본문을 3문장으로 요약하세요. 핵심 사실만 담고, 의견이나 추측은 제외하세요.",
         messages=[{"role": "user", "content": f"다음 기사를 3문장으로 요약해주세요:\n\n{body[:3000]}"}],
         temperature=0.2,
         max_tokens=300,

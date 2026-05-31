@@ -341,43 +341,58 @@ def get_current_price(ticker: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 def get_market_cap_info(ticker: str) -> Optional[dict]:
-    """시총, PER, PBR, EPS 조회"""
-    if not PYKRX_AVAILABLE:
-        return None
+    """
+    시총·PER·PBR·EPS 조회.
 
+    pykrx get_market_fundamental_by_date 가 KRX API 변경으로 빈 DataFrame을 반환하므로
+    Naver Finance polling API를 기본 소스로 사용한다.
+    - PER = 현재가 / EPS
+    - PBR = 현재가 / BPS
+    - 시가총액 = 현재가 × 상장주식수
+    """
     try:
-        df = pykrx_stock.get_market_fundamental_by_date(
-            fromdate=_n_days_ago(5),
-            todate=_today(),
-            ticker=ticker,
-        )
-        if df is None or df.empty:
+        import httpx
+
+        url = f"https://polling.finance.naver.com/api/realtime?query=SERVICE_ITEM:{ticker}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = httpx.get(url, headers=headers, timeout=8.0)
+        r.raise_for_status()
+
+        import json as _json
+        raw = r.content.decode("euc-kr").strip()
+        if not raw:
+            logger.warning("빈 응답 수신 — 시세 정보 없음 (ticker=%s)", ticker)
+            return None
+        areas = _json.loads(raw).get("result", {}).get("areas", [])
+        datas = areas[0].get("datas", []) if areas else []
+        if not datas:
             return None
 
-        row = df.iloc[-1]
-        cap_df = pykrx_stock.get_market_cap_by_date(
-            fromdate=_n_days_ago(5),
-            todate=_today(),
-            ticker=ticker,
-        )
-        market_cap = (
-            float(cap_df.iloc[-1]["시가총액"])
-            if cap_df is not None and not cap_df.empty
-            else None
-        )
+        item = datas[0]
 
-        def _to_optional_float(val) -> Optional[float]:
+        def _f(key) -> Optional[float]:
+            v = item.get(key)
             try:
-                f = float(val)
+                f = float(v)
                 return f if f != 0.0 else None
             except (TypeError, ValueError):
                 return None
 
+        price = _f("nv")           # 현재가
+        eps = _f("eps")            # 주당순이익
+        bps = _f("bps")            # 주당순자산
+        shares = _f("countOfListedStock")  # 상장주식수
+
+        def _div(a, b) -> Optional[float]:
+            if a is None or b is None or b == 0:
+                return None
+            return round(a / b, 2)
+
         return {
-            "market_cap": market_cap,
-            "per": _to_optional_float(row.get("PER")),
-            "pbr": _to_optional_float(row.get("PBR")),
-            "eps": _to_optional_float(row.get("EPS")),
+            "market_cap": (price * shares) if price and shares else None,
+            "per": _div(price, eps),
+            "pbr": _div(price, bps),
+            "eps": eps,
         }
     except Exception as e:
         logger.warning(f"시총 정보 조회 실패 ({ticker}): {e}")
