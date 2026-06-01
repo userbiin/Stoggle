@@ -56,6 +56,8 @@ def _load_analysis_with_age(ticker: str) -> tuple[dict | None, float]:
                     if row.updated_at else float("inf")
                 )
                 data = json.loads(row.keywords_json)
+                if row.summary:
+                    data["summary"] = row.summary
                 # Redis에 올려 다음 요청부터 빠르게
                 set_insight_cache(ticker, data)
                 return data, age
@@ -110,7 +112,6 @@ async def get_insight(ticker: str):
     )
 
     titles = [n.title for n in news_items]
-    summary = await summarize_with_llm(ticker, company_name, titles) if titles else None
 
     latest_price = None
     change = None
@@ -143,6 +144,14 @@ async def get_insight(ticker: str):
         task = asyncio.create_task(_run_analysis_background(ticker, articles))
         _bg_tasks.add(task)
         task.add_done_callback(_bg_tasks.discard)
+
+    # 요약: 캐시 우선, 완전 cold-start(캐시 없음)일 때만 LLM 직접 호출
+    if cached_analysis and cached_analysis.get("summary"):
+        summary = cached_analysis["summary"]
+    elif not cached_analysis and titles:
+        summary = await summarize_with_llm(ticker, company_name, titles)
+    else:
+        summary = None
 
     # 키워드: LLM 이벤트 우선, 없으면 뉴스 제목 빈도 폴백
     if cached_analysis and cached_analysis.get("events"):

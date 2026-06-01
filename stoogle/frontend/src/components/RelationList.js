@@ -9,28 +9,40 @@ const styles = {
   title: { fontSize: '15px', fontWeight: '600', marginBottom: '12px', color: 'var(--color-text-primary)' },
   list: { display: 'flex', flexDirection: 'column', gap: '0' },
   item: {
-    display: 'flex', alignItems: 'center', gap: '12px',
-    padding: '10px 0', borderBottom: '1px solid var(--color-border)',
+    padding: '12px 0',
+    borderBottom: '1px solid var(--color-border)',
+  },
+  itemHeader: {
+    display: 'flex', alignItems: 'center', gap: '10px',
     cursor: 'pointer', transition: 'opacity var(--transition)',
+    marginBottom: '8px',
   },
-  rank: {
-    width: '22px', height: '22px', borderRadius: '50%',
-    background: 'var(--color-accent-light)', color: 'var(--color-accent)',
-    fontSize: '11px', fontWeight: '700', display: 'flex',
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-  },
-  info: { flex: 1 },
-  name: { fontSize: '14px', fontWeight: '600', color: 'var(--color-text-primary)' },
-  reason: { fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '2px' },
-  corr: {
-    textAlign: 'right',
-  },
+  name: { fontSize: '14px', fontWeight: '600', color: 'var(--color-text-primary)', flex: 1 },
+  ticker: { fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: '400', marginLeft: '4px' },
+  corr: { textAlign: 'right', flexShrink: 0, width: '56px' },
+  corrValue: { fontSize: '12px', fontWeight: '700', color: 'var(--color-accent)' },
   corrBar: {
-    height: '4px', borderRadius: '2px', background: 'var(--color-border)',
-    marginTop: '4px', overflow: 'hidden',
+    height: '3px', borderRadius: '2px', background: 'var(--color-border)',
+    marginTop: '3px', overflow: 'hidden',
   },
   corrFill: { height: '100%', borderRadius: '2px', background: 'var(--color-accent)', transition: 'width 0.5s ease' },
-  corrValue: { fontSize: '12px', fontWeight: '700', color: 'var(--color-accent)' },
+  reasonBox: {
+    background: 'var(--color-accent-light)',
+    border: '1px solid #d0e4fc',
+    borderRadius: '6px',
+    padding: '7px 10px',
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '6px',
+  },
+  reasonLabel: {
+    fontSize: '10px', fontWeight: '700', color: 'var(--color-accent)',
+    letterSpacing: '0.04em', textTransform: 'uppercase',
+    flexShrink: 0, paddingTop: '1px',
+  },
+  reasonText: {
+    fontSize: '12px', color: '#1a3c6e', lineHeight: '1.6',
+  },
 };
 
 export default function RelationList({ companies = [] }) {
@@ -40,25 +52,31 @@ export default function RelationList({ companies = [] }) {
     <div style={styles.card}>
       <div style={styles.title}>연관 기업 목록</div>
       <div style={styles.list}>
-        {companies.map((c, i) => (
-          <div
-            key={c.ticker}
-            style={styles.item}
-            onClick={() => navigate(`/company/${c.ticker}`)}
-            onMouseEnter={(e) => e.currentTarget.style.opacity = '0.7'}
-            onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
-          >
-            <div style={styles.rank}>{i + 1}</div>
-            <div style={styles.info}>
-              <div style={styles.name}>{c.name} <span style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: '400' }}>{c.ticker}</span></div>
-              <div style={styles.reason}>{c.reason}</div>
-            </div>
-            <div style={{ ...styles.corr, width: '64px' }}>
-              <div style={styles.corrValue}>{(c.correlation * 100).toFixed(0)}%</div>
-              <div style={styles.corrBar}>
-                <div style={{ ...styles.corrFill, width: `${c.correlation * 100}%` }} />
+        {companies.map((c) => (
+          <div key={c.ticker} style={styles.item}>
+            <div
+              style={styles.itemHeader}
+              onClick={() => navigate(`/company/${c.ticker}`)}
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.7')}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+            >
+              <div style={styles.name}>
+                {c.name}
+                <span style={styles.ticker}>{c.ticker}</span>
+              </div>
+              <div style={styles.corr}>
+                <div style={styles.corrValue}>{(c.correlation * 100).toFixed(0)}%</div>
+                <div style={styles.corrBar}>
+                  <div style={{ ...styles.corrFill, width: `${c.correlation * 100}%` }} />
+                </div>
               </div>
             </div>
+            {c.reason && (
+              <div style={styles.reasonBox}>
+                <span style={styles.reasonLabel}>AI</span>
+                <span style={styles.reasonText}>{c.reason}</span>
+              </div>
+            )}
           </div>
         ))}
       </div>

@@ -122,44 +122,80 @@ async def _fetch_majorstock(corp_code: str, api_key: str) -> list[dict]:
         return []
 
 
-async def _fetch_executive_member(corp_code: str, api_key: str) -> list[dict]:
-    """임원 현황 조회 (executiveMember.json) — 겸직 계열사 정보 추출용."""
+async def _fetch_related_party_from_xml(rcept_no: str, api_key: str) -> list[str]:
+    """
+    사업보고서 XML 원문에서 특수관계자 섹션을 추출하고
+    등장하는 기업명 목록을 반환한다.
+
+    추출 대상: '특수관계자와의 거래' 섹션 내 한국 대기업·중견기업 패턴
+    """
+    import io, zipfile
+
+    # 주요 대기업 그룹명 기반 패턴 (공시 특수관계자 테이블에 자주 등장)
+    _GROUP_PATTERN = re.compile(
+        r"(?:삼성|SK|LG|현대|롯데|한화|포스코|두산|GS|CJ|한진|효성|LS|코오롱|신세계|현대중공업)"
+        r"[가-힣A-Za-z0-9&·\s]{1,15}",
+        re.UNICODE,
+    )
+
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=30) as client:
             res = await client.get(
-                f"{DART_BASE}/executiveMember.json",
-                params={"crtfc_key": api_key, "corp_code": corp_code},
+                f"{DART_BASE}/document.xml",
+                params={"crtfc_key": api_key, "rcept_no": rcept_no},
             )
             res.raise_for_status()
-        data = res.json()
-        if data.get("status") != "000":
+
+        with zipfile.ZipFile(io.BytesIO(res.content)) as z:
+            xml_name = z.namelist()[0]
+            content = z.read(xml_name).decode("utf-8", errors="replace")
+
+        # 특수관계자 섹션 추출 (최대 20,000자)
+        idx = content.find("특수관계자와의 거래")
+        if idx < 0:
+            idx = content.find("특수관계자")
+        if idx < 0:
             return []
-        return data.get("list", [])
+        section = content[idx : idx + 20000]
+
+        names = set()
+        for m in _GROUP_PATTERN.finditer(section):
+            name = m.group().strip().rstrip()
+            if len(name) >= 3 and not re.search(r"^\s*(WIDTH|ACLASS|TBODY|TABLE)", name):
+                names.add(name)
+        return list(names)
+
     except Exception as e:
-        logger.debug("executiveMember.json 조회 실패 (%s): %s", corp_code, e)
+        logger.debug("XML 특수관계자 추출 실패 (%s): %s", rcept_no, e)
         return []
 
 
 def _edges_from_majorstock(ticker: str, rows: list[dict], reverse_reg: dict) -> list[dict]:
     """
-    최대주주 현황에서 법인 주주를 찾아 affiliate 엣지를 생성한다.
-    개인 주주(nm에 '대표이사', '임원' 등 직함 포함)는 제외.
+    주요주주 지분변동 보고서(majorstock.json)에서 법인 주주를 찾아 affiliate 엣지를 생성한다.
+
+    DART API 실제 응답 필드:
+      repror   — 보고자(주주) 이름
+      stkrt    — 현재 지분율 (%)
+      ctr_stkrt — 주요주주 기준 지분율 (%)
+
+    동일 보고자의 복수 보고 건은 가장 최근 지분율 하나로 중복 제거한다.
     """
-    individual_keywords = re.compile(r"대표이사|이사|사장|회장|부회장|임원|상무|전무|부사장")
+    individual_keywords = re.compile(r"대표이사|이사|사장|회장|부회장|임원|상무|전무|부사장|펀드|투자|자산운용")
     edges = []
+    seen: set[str] = set()
 
     for row in rows:
-        shareholder_nm = (row.get("nm") or "").strip()
-        relate = (row.get("relate") or "").strip()
-        hold_pct_str = (row.get("bsis_posesn_stock_qota_rt") or "0").replace(",", "")
+        shareholder_nm = (row.get("repror") or "").strip()
+        hold_pct_str = (row.get("stkrt") or row.get("ctr_stkrt") or "0").replace(",", "")
 
-        # 개인 주주 제외
         if individual_keywords.search(shareholder_nm):
             continue
 
         norm = _normalize_name(shareholder_nm)
-        if len(norm) < 2:
+        if len(norm) < 2 or norm in seen:
             continue
+        seen.add(norm)
 
         dst_ticker = _resolve_ticker(norm, reverse_reg)
         if dst_ticker is None or dst_ticker == ticker:
@@ -170,15 +206,25 @@ def _edges_from_majorstock(ticker: str, rows: list[dict], reverse_reg: dict) -> 
         except ValueError:
             hold_pct = 0.0
 
-        # 지분율을 confidence로 사용 (최대 1.0)
         confidence = min(hold_pct / 100.0, 1.0)
-        evidence = f"최대주주 지분 {hold_pct:.2f}% ({relate})"
+        evidence = f"주요주주 지분 {hold_pct:.2f}% ({shareholder_nm})"
 
+        edges.append({
+            "src": dst_ticker,      # 주주(모회사)가 src
+            "dst": ticker,          # 피투자기업이 dst
+            "relation_type": "affiliate",
+            "direction": "forward",
+            "weight": confidence,
+            "confidence": confidence,
+            "evidence": evidence,
+            "source": "dart",
+        })
+        # 역방향 엣지도 추가 (그래프 탐색 양방향 지원)
         edges.append({
             "src": ticker,
             "dst": dst_ticker,
             "relation_type": "affiliate",
-            "direction": "forward",
+            "direction": "reverse",
             "weight": confidence,
             "confidence": confidence,
             "evidence": evidence,
@@ -188,30 +234,40 @@ def _edges_from_majorstock(ticker: str, rows: list[dict], reverse_reg: dict) -> 
     return edges
 
 
-def _edges_from_executives(ticker: str, rows: list[dict], reverse_reg: dict) -> list[dict]:
+def _edges_from_xml_names(ticker: str, names: list[str], reverse_reg: dict) -> list[dict]:
     """
-    임원 현황의 '주요경력/겸직' 컬럼에서 계열사명을 추출해 affiliate 엣지를 생성한다.
+    XML 특수관계자 섹션에서 추출된 기업명을 종목코드로 변환하여
+    affiliate 엣지를 생성한다.
     """
     edges = []
     seen: set[str] = set()
 
-    for row in rows:
-        career = (row.get("main_career") or "") + " " + (row.get("spcmt_matter") or "")
-        for name in _extract_company_names(career):
-            dst_ticker = _resolve_ticker(name, reverse_reg)
-            if dst_ticker is None or dst_ticker == ticker or dst_ticker in seen:
-                continue
-            seen.add(dst_ticker)
-            edges.append({
-                "src": ticker,
-                "dst": dst_ticker,
-                "relation_type": "affiliate",
-                "direction": "forward",
-                "weight": 0.5,
-                "confidence": 0.5,
-                "evidence": f"임원 겸직 계열사: {name}",
-                "source": "dart",
-            })
+    for name in names:
+        dst_ticker = _resolve_ticker(name, reverse_reg)
+        if dst_ticker is None or dst_ticker == ticker or dst_ticker in seen:
+            continue
+        seen.add(dst_ticker)
+        edges.append({
+            "src": ticker,
+            "dst": dst_ticker,
+            "relation_type": "affiliate",
+            "direction": "forward",
+            "weight": 0.85,
+            "confidence": 0.85,
+            "evidence": f"사업보고서 특수관계자 섹션 명시: {name}",
+            "source": "dart",
+        })
+        # 역방향 엣지 (양방향 그래프 탐색 지원)
+        edges.append({
+            "src": dst_ticker,
+            "dst": ticker,
+            "relation_type": "affiliate",
+            "direction": "reverse",
+            "weight": 0.85,
+            "confidence": 0.85,
+            "evidence": f"사업보고서 특수관계자 섹션 명시: {name}",
+            "source": "dart",
+        })
 
     return edges
 
@@ -414,10 +470,16 @@ async def extract_dart_edges(ticker: str) -> int:
     """
     DART 공시에서 사업 관계 엣지를 추출하여 company_edges에 저장.
 
-    Returns
-    -------
-    int: 저장된 엣지 수
+    A. DART API (api_key 필요):
+       - majorstock.json  → 법인 주주(모회사) affiliate 엣지
+       - 사업보고서 XML   → 특수관계자 섹션 기업명 → affiliate 엣지
+
+    B. DartChunk regex   → 텍스트 패턴 기반 추가 엣지
+
+    Returns: 저장된 엣지 수
     """
+    import asyncio
+
     api_key = os.getenv("DART_API_KEY")
     reverse_reg = _build_reverse_registry()
     if not reverse_reg:
@@ -426,19 +488,28 @@ async def extract_dart_edges(ticker: str) -> int:
 
     all_edges: list[dict] = []
 
-    # A. DART API 구조화 데이터 (API 키 있을 때만)
     if api_key:
         corp_code = await _get_corp_code(ticker, api_key)
         if corp_code:
-            major_rows, exec_rows = await _parallel_fetch(corp_code, api_key)
+            # 최대주주 + 최신 사업보고서 rcept_no 병렬 조회
+            major_rows, disclosures = await asyncio.gather(
+                _fetch_majorstock(corp_code, api_key),
+                _fetch_latest_annual_rcept(corp_code, api_key),
+            )
             all_edges.extend(_edges_from_majorstock(ticker, major_rows, reverse_reg))
-            all_edges.extend(_edges_from_executives(ticker, exec_rows, reverse_reg))
+
+            # 사업보고서 XML에서 특수관계자 기업명 추출
+            if disclosures:
+                rcept_no = disclosures[0].get("rcept_no", "")
+                xml_names = await _fetch_related_party_from_xml(rcept_no, api_key)
+                all_edges.extend(_edges_from_xml_names(ticker, xml_names, reverse_reg))
+                logger.info("[%s] XML 특수관계자 추출: %d개 기업명", ticker, len(xml_names))
         else:
             logger.info("[%s] corp_code 없음 — DART API 엣지 건너뜀", ticker)
     else:
         logger.debug("[%s] DART_API_KEY 없음 — DartChunk 파싱만 실행", ticker)
 
-    # B. DartChunk 텍스트 regex 파싱 (pgvector 있을 때만)
+    # B. DartChunk 텍스트 regex 파싱
     all_edges.extend(_edges_from_dart_chunks(ticker, reverse_reg))
 
     # 중복 제거: (src, dst, relation_type) 기준, confidence 최대값 유지
@@ -454,13 +525,30 @@ async def extract_dart_edges(ticker: str) -> int:
     return saved
 
 
-async def _parallel_fetch(corp_code: str, api_key: str):
-    """최대주주·임원 현황을 병렬로 조회한다."""
-    import asyncio
-
-    major_task = asyncio.create_task(_fetch_majorstock(corp_code, api_key))
-    exec_task = asyncio.create_task(_fetch_executive_member(corp_code, api_key))
-    return await asyncio.gather(major_task, exec_task)
+async def _fetch_latest_annual_rcept(corp_code: str, api_key: str) -> list[dict]:
+    """최근 사업보고서(11011) 1건의 rcept_no를 반환한다."""
+    from datetime import datetime, timedelta
+    bgn_de = (datetime.today() - timedelta(days=400)).strftime("%Y%m%d")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            res = await client.get(
+                f"{DART_BASE}/list.json",
+                params={
+                    "crtfc_key": api_key,
+                    "corp_code": corp_code,
+                    "bgn_de": bgn_de,
+                    "pblntf_ty": "A",
+                    "page_count": 5,
+                },
+            )
+            res.raise_for_status()
+        items = res.json().get("list", [])
+        # 사업보고서(연간)만 필터
+        annual = [i for i in items if "사업보고서" in i.get("report_nm", "")]
+        return annual[:1]
+    except Exception as e:
+        logger.debug("사업보고서 목록 조회 실패 (%s): %s", corp_code, e)
+        return []
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -96,7 +96,7 @@ async def summarize_with_llm(
             model=os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001"),
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
-            max_tokens=300,
+            max_tokens=500,
         )
         return response.content[0].text.strip() if response.content else None
     except Exception:

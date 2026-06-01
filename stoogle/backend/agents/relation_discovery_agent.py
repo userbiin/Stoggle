@@ -413,3 +413,186 @@ async def discover_relations(ticker: str) -> int:
     count = _save_relations(ticker, resolved)
     logger.info("[%s] 관계 발굴 완료: %d건 저장 (후보 %d건)", ticker, count, len(result.relations))
     return count
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 소급 배치 발굴 (과거 뉴스 전체 탐색)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _load_news_cache_all(ticker: str, limit: int = 200) -> list[tuple[str, str]]:
+    """
+    NewsCache 테이블에서 해당 종목의 과거 뉴스 전체를 로드한다.
+    반환: [(title, summary), ...]  최신순 정렬
+    """
+    try:
+        from models.db_models import NewsCache, SessionLocal
+
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(NewsCache)
+                .filter(NewsCache.ticker == ticker)
+                .order_by(NewsCache.fetched_at.desc())
+                .limit(limit)
+                .all()
+            )
+            return [(r.title or "", r.summary or "") for r in rows if r.title]
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning("[%s] NewsCache 로드 실패: %s", ticker, e)
+        return []
+
+
+def _chunk_articles(
+    articles: list[tuple[str, str]], chunk_size: int = 25
+) -> list[list[tuple[str, str]]]:
+    """기사 목록을 chunk_size 단위 배치로 분할한다."""
+    return [articles[i : i + chunk_size] for i in range(0, len(articles), chunk_size)]
+
+
+def _format_articles_text(articles: list[tuple[str, str]], offset: int = 0) -> str:
+    lines = []
+    for i, (title, summary) in enumerate(articles, start=offset + 1):
+        lines.append(f"[뉴스 {i}] {title}")
+        if summary:
+            lines.append(f"  요약: {summary}")
+    return "\n".join(lines)
+
+
+async def _merge_results(
+    batches: list[Optional[_DiscoverySchema]],
+    ticker: str,
+    reverse_registry: dict,
+) -> list[dict]:
+    """
+    여러 배치의 LLM 결과를 합산·중복 제거한다.
+    같은 related_ticker + relation_type 쌍은 confidence 최대값을 유지한다.
+    """
+    best: dict[tuple, dict] = {}
+
+    for result in batches:
+        if result is None or not result.relations:
+            continue
+        for item in result.relations:
+            resolved_ticker = _resolve_ticker(item.company_name, reverse_registry)
+            if resolved_ticker is None or resolved_ticker == ticker:
+                continue
+
+            key = (resolved_ticker, item.relation_type)
+            entry = {
+                "ticker": resolved_ticker,
+                "relation_type": _map_relation_type(item.relation_type),
+                "reason": f"[{item.relation_type}] {item.reason}",
+                "source": item.source if item.source in ("news", "dart") else "news",
+                "confidence": item.confidence,
+            }
+            existing = best.get(key)
+            if existing is None or item.confidence > existing["confidence"]:
+                best[key] = entry
+
+    return list(best.values())
+
+
+async def discover_relations_retroactive(ticker: str, max_articles: int = 150) -> int:
+    """
+    NewsCache에 저장된 과거 뉴스 전체 + 멀티페이지 크롤링 결과를 소급 탐색하여
+    company_edges 및 RelationCache를 채운다.
+
+    - 과거 뉴스를 25건씩 배치로 나눠 LLM 호출 → 결과 합산
+    - 이미 발굴된 관계보다 confidence가 높은 경우에만 갱신
+    - `discover_relations` 와 달리 단발성 씨딩용으로 설계됨
+
+    Returns
+    -------
+    int: 저장/갱신된 관계 수
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        logger.warning("ANTHROPIC_API_KEY 미설정 — 소급 발굴 건너뜀")
+        return 0
+
+    from services.stock_service import get_or_build_registry
+
+    registry = get_or_build_registry()
+    company_name = registry.get(ticker, {}).get("name", ticker)
+    reverse_registry = _build_reverse_registry(registry)
+    model = os.getenv("LLM_MODEL", "claude-sonnet-4-6")
+
+    from anthropic import AsyncAnthropic
+    client = AsyncAnthropic(api_key=api_key)
+
+    # 1. NewsCache 과거 데이터 로드
+    cached_articles = _load_news_cache_all(ticker, limit=max_articles)
+
+    # 2. 멀티페이지 크롤링으로 보완 (아직 캐시에 없는 과거 기사)
+    live_articles = await _get_news_text_multipage(ticker, pages=5)
+
+    # 중복 제거: title 기준
+    seen_titles = {t for t, _ in cached_articles}
+    combined = list(cached_articles)
+    for title, summary in live_articles:
+        if title not in seen_titles:
+            combined.append((title, summary))
+            seen_titles.add(title)
+
+    if not combined:
+        logger.info("[%s] 소급 발굴: 뉴스 없음", ticker)
+        return 0
+
+    logger.info("[%s] 소급 발굴 시작: 총 %d건 기사", ticker, len(combined))
+
+    # DART 텍스트는 단일 섹션으로 추가
+    dart_text = _get_dart_text(ticker)
+
+    # 3. 25건씩 배치 처리
+    chunks = _chunk_articles(combined, chunk_size=25)
+    batch_results: list[Optional[_DiscoverySchema]] = []
+
+    for idx, chunk in enumerate(chunks):
+        articles_text = _format_articles_text(chunk, offset=idx * 25)
+        sections = [f"기준 기업: {company_name} ({ticker})", f"[뉴스 기사]\n{articles_text}"]
+        if dart_text and idx == 0:  # DART는 첫 배치에만 포함
+            sections.append(f"[DART 공시]\n{dart_text}")
+        prompt = "\n\n".join(sections)
+
+        result = await _call_claude(client, model, prompt)
+        batch_results.append(result)
+        logger.debug("[%s] 배치 %d/%d 완료", ticker, idx + 1, len(chunks))
+
+    # 4. 결과 합산 + 저장
+    resolved = await _merge_results(batch_results, ticker, reverse_registry)
+    if not resolved:
+        logger.info("[%s] 소급 발굴: 관계 없음", ticker)
+        return 0
+
+    count = _save_relations(ticker, resolved)
+    logger.info(
+        "[%s] 소급 발굴 완료: %d건 저장 (배치 %d개, 기사 %d건)",
+        ticker, count, len(chunks), len(combined),
+    )
+    return count
+
+
+async def _get_news_text_multipage(
+    ticker: str, pages: int = 5
+) -> list[tuple[str, str]]:
+    """
+    네이버 금융에서 여러 페이지 뉴스를 수집한다.
+    이미 NewsCache에 있는 내용과 합산하면 과거 기사 커버리지가 높아진다.
+    """
+    results: list[tuple[str, str]] = []
+    try:
+        from services.news_service import fetch_news
+
+        for page in range(1, pages + 1):
+            try:
+                items = await fetch_news(ticker, page=page, force=True)
+                for item in items:
+                    results.append((item.title, item.summary or ""))
+            except Exception as e:
+                logger.debug("[%s] page=%d 수집 실패: %s", ticker, page, e)
+                break
+    except Exception as e:
+        logger.warning("[%s] 멀티페이지 수집 실패: %s", ticker, e)
+    return results

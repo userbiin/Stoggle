@@ -57,18 +57,50 @@ function relativeTime(dateStr) {
   return `${Math.floor(diff / 86400)}일 전`;
 }
 
+const TABS = [
+  { key: 'all',      label: '전체' },
+  { key: 'positive', label: '긍정' },
+  { key: 'neutral',  label: '중립' },
+  { key: 'negative', label: '부정' },
+];
+
+function tabActiveClass(key) {
+  if (key === 'positive') return 'news-tab-btn active-positive';
+  if (key === 'negative') return 'news-tab-btn active-negative';
+  return 'news-tab-btn active';
+}
+
 export default function NewsSection({ news = [] }) {
+  const [tab, setTab] = useState('all');
   const [page, setPage] = useState(0);
 
-  const totalPages = Math.max(1, Math.ceil(news.length / PAGE_SIZE));
-  const pageNews = news.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const filtered = tab === 'all' ? news : news.filter((n) => n.sentiment === tab);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageNews = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const canPrev = page > 0;
   const canNext = page < totalPages - 1;
+
+  function handleTabChange(key) {
+    setTab(key);
+    setPage(0);
+  }
 
   return (
     <div style={styles.card}>
       <div style={styles.header}>
         <span style={styles.title}>관련 뉴스</span>
+      </div>
+
+      <div className="news-tabs">
+        {TABS.map(({ key, label }) => (
+          <button
+            key={key}
+            className={tab === key ? tabActiveClass(key) : 'news-tab-btn'}
+            onClick={() => handleTabChange(key)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       <div style={styles.list}>
@@ -96,7 +128,7 @@ export default function NewsSection({ news = [] }) {
         )}
       </div>
 
-      {news.length > PAGE_SIZE && (
+      {filtered.length > PAGE_SIZE && (
         <div style={styles.pagination}>
           <button
             style={canPrev ? styles.navBtn : { ...styles.navBtn, ...styles.navBtnDisabled }}
