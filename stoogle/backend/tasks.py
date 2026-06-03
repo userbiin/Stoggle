@@ -126,6 +126,193 @@ from services.kospi200 import KOSPI200_TICKERS, KOSPI200_FALLBACK as _KOSPI200_F
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# DB upsert 헬퍼 — Redis 저장과 독립적으로 격리; 실패해도 태스크 롤백 없음
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _upsert_price_history_to_db(ticker: str, history: list) -> None:
+    """PriceHistory bulk upsert. (ticker, date) 충돌 시 close/volume 갱신."""
+    if not history:
+        return
+    try:
+        from models.db_models import PriceHistory, SessionLocal
+
+        rows = [
+            {"ticker": ticker, "date": p.date, "close": p.close, "volume": p.volume}
+            for p in history
+        ]
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        db = SessionLocal()
+        try:
+            stmt = pg_insert(PriceHistory).values(rows)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["ticker", "date"],
+                set_={"close": stmt.excluded.close, "volume": stmt.excluded.volume},
+            )
+            db.execute(stmt)
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning("price_history DB 저장 실패 (%s): %s", ticker, e)
+
+
+def _upsert_companies_to_db(registry: dict) -> None:
+    """Company bulk upsert. ticker 충돌 시 name/market/updated_at 갱신."""
+    if not registry:
+        return
+    try:
+        from models.db_models import Company, SessionLocal
+
+        now = datetime.utcnow()
+        rows = [
+            {
+                "ticker": info["ticker"],
+                "name": info.get("name", info["ticker"]),
+                "market": info.get("market", ""),
+                "updated_at": now,
+            }
+            for info in registry.values()
+            if info.get("ticker")
+        ]
+        if not rows:
+            return
+
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        db = SessionLocal()
+        try:
+            stmt = pg_insert(Company).values(rows)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["ticker"],
+                set_={
+                    "name": stmt.excluded.name,
+                    "market": stmt.excluded.market,
+                    "updated_at": stmt.excluded.updated_at,
+                },
+            )
+            db.execute(stmt)
+            db.commit()
+        finally:
+            db.close()
+        logger.info("companies DB 갱신 완료: %d건", len(rows))
+    except Exception as e:
+        logger.warning("companies DB 저장 실패: %s", e)
+
+
+def _upsert_news_cache_to_db(ticker: str, items: list) -> None:
+    """NewsCache 갱신. 해당 ticker 기존 행 삭제 후 재삽입 (unique constraint 없음)."""
+    if not items:
+        return
+    try:
+        from models.db_models import NewsCache, SessionLocal
+
+        now = datetime.utcnow()
+        db = SessionLocal()
+        try:
+            db.query(NewsCache).filter(NewsCache.ticker == ticker).delete()
+            db.bulk_insert_mappings(NewsCache, [
+                {
+                    "ticker": ticker,
+                    "title": item.title,
+                    "source": item.source,
+                    "published_at": item.published_at,
+                    "url": item.url,
+                    "sentiment": item.sentiment,
+                    "summary": item.summary,
+                    "category": item.category,
+                    "fetched_at": now,
+                }
+                for item in items
+            ])
+            db.commit()
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning("news_cache DB 저장 실패 (%s): %s", ticker, e)
+
+
+def _update_market_model_params() -> None:
+    """price_history DB로 KOSPI200 종목별 α/β 추정 → market_model_params 저장.
+
+    매월 1일에만 실행 (데이터 변동 적고 pykrx 비호출 방식으로 DB에서 직접 계산).
+    """
+    if datetime.today().day != 1:
+        return
+    try:
+        from collections import defaultdict
+        from models.db_models import PriceHistory, SessionLocal
+        from evaluation.market_model import estimate_market_model, save_market_params
+
+        db = SessionLocal()
+        try:
+            estimation_date = datetime.today().strftime("%Y-%m-%d")
+
+            rows = (
+                db.query(PriceHistory.ticker, PriceHistory.date, PriceHistory.close)
+                .filter(PriceHistory.ticker.in_(KOSPI200_TICKERS))
+                .order_by(PriceHistory.date)
+                .all()
+            )
+            if not rows:
+                logger.warning("price_history 없음 — market_model_params 건너뜀")
+                return
+
+            prices_by_ticker: dict[str, dict[str, float]] = defaultdict(dict)
+            all_dates: set[str] = set()
+            for tkr, date_str, close in rows:
+                prices_by_ticker[tkr][date_str] = close
+                all_dates.add(date_str)
+
+            # 날짜별 KOSPI200 동일가중 평균 → 시장 수익률
+            sorted_dates = sorted(all_dates)
+            mkt_closes: list[float] = []
+            for d in sorted_dates:
+                closes = [
+                    prices_by_ticker[t][d]
+                    for t in KOSPI200_TICKERS
+                    if d in prices_by_ticker[t]
+                ]
+                if closes:
+                    mkt_closes.append(sum(closes) / len(closes))
+
+            market_returns = [
+                (mkt_closes[i] - mkt_closes[i - 1]) / mkt_closes[i - 1]
+                for i in range(1, len(mkt_closes))
+                if mkt_closes[i - 1] > 0
+            ]
+
+            saved = 0
+            for tkr in KOSPI200_TICKERS:
+                try:
+                    td = prices_by_ticker.get(tkr, {})
+                    if len(td) < 30:
+                        continue
+                    s_prices = [td[d] for d in sorted(td.keys())]
+                    stock_returns = [
+                        (s_prices[i] - s_prices[i - 1]) / s_prices[i - 1]
+                        for i in range(1, len(s_prices))
+                        if s_prices[i - 1] > 0
+                    ]
+                    n = min(len(stock_returns), len(market_returns))
+                    if n < 20:
+                        continue
+                    alpha, beta, r_sq = estimate_market_model(
+                        stock_returns[-n:], market_returns[-n:]
+                    )
+                    save_market_params(tkr, estimation_date, alpha, beta, r_sq, db)
+                    saved += 1
+                except Exception as e:
+                    logger.warning("market_model_params 계산 실패 (%s): %s", tkr, e)
+
+            logger.info("market_model_params 갱신 완료: %d건", saved)
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning("_update_market_model_params 실패: %s", e)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 뉴스 사전 수집
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -173,6 +360,7 @@ def refresh_ticker_registry(self):
 
         registry = build_ticker_registry()
         ok = set_ticker_registry(registry)
+        _upsert_companies_to_db(registry)
         return {"status": "ok", "count": len(registry), "cached": ok}
     except Exception as e:
         logger.error(f"레지스트리 갱신 실패: {e}")
@@ -252,7 +440,7 @@ def fetch_top200_prices(self):
 
 @app.task(bind=True, max_retries=3, default_retry_delay=120)
 def update_price_history(self):
-    """당일 주가 히스토리를 Redis에 캐싱한다 (장 마감 후)."""
+    """당일 주가 히스토리를 Redis에 캐싱하고 DB에 적재한다 (장 마감 후)."""
     from services.stock_service import get_price_history
 
     results = {}
@@ -260,8 +448,8 @@ def update_price_history(self):
         try:
             history = get_price_history(ticker, days=90)
             results[ticker] = len(history)
+            _upsert_price_history_to_db(ticker, history)
         except Exception as e:
-            # 개별 종목 실패는 경고만 — 전체 태스크 재시도 금지
             logger.warning(f"히스토리 갱신 실패 ({ticker}): {e}")
 
     return {"status": "ok", "updated": results}
@@ -299,6 +487,7 @@ def crawl_all_news(self):
 
             # 랭킹 완료된 목록을 Redis에 저장
             set_news_cache(ticker, [i.model_dump() for i in ranked])
+            _upsert_news_cache_to_db(ticker, ranked)
             results[ticker] = len(ranked)
 
             news_for_dedup[ticker] = [
@@ -469,6 +658,7 @@ def calibrate_predictions(self):
 
     try:
         result = asyncio.run(run_daily())
+        _update_market_model_params()
         return {
             "status": "ok",
             "sample_count": result.sample_count,
