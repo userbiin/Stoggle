@@ -6,10 +6,16 @@ Celery 자동화 스케줄러
   celery -A tasks beat --loglevel=info
 """
 import os
+import sys
 import time
 import logging
 import asyncio
 from datetime import datetime, timedelta
+
+# ForkPoolWorker가 다른 cwd에서 실행될 때 agents/services 등 로컬 패키지를 찾지 못하는 문제 방지
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+if _BACKEND_DIR not in sys.path:
+    sys.path.insert(0, _BACKEND_DIR)
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import task_prerun, task_postrun, task_failure
