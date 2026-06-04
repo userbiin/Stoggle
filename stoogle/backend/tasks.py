@@ -12,11 +12,22 @@ import logging
 import asyncio
 from datetime import datetime, timedelta
 
-# ForkPoolWorker가 다른 cwd에서 실행될 때 agents/services 등 로컬 패키지를 찾지 못하는 문제 방지
+# 모듈 로드 시점 sys.path 보장 (MainProcess용)
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 if _BACKEND_DIR not in sys.path:
     sys.path.insert(0, _BACKEND_DIR)
+
+import nest_asyncio
+nest_asyncio.apply()  # asyncio.run() 중첩 허용 — Event loop is closed 방지
+
 from celery import Celery
+from celery.signals import worker_process_init
+
+@worker_process_init.connect
+def _init_worker_process(**kwargs):
+    """각 ForkPoolWorker 프로세스 시작 시 sys.path 재설정."""
+    if _BACKEND_DIR not in sys.path:
+        sys.path.insert(0, _BACKEND_DIR)
 from celery.schedules import crontab
 from celery.signals import task_prerun, task_postrun, task_failure
 from dotenv import load_dotenv
