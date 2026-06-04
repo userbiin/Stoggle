@@ -188,7 +188,7 @@ def save_correlations_to_cache(
                 if existing_source in ("news", "dart"):
                     continue
 
-                reason = f"{item['relation_type']} 관계 (상관계수 {item['correlation']:.2f})"
+                reason = ""
                 if existing:
                     existing.correlation = item["correlation"]
                     existing.relation_type = item["relation_type"]
@@ -264,6 +264,7 @@ def compute_relations(
                     ticker=cand,
                     name=cand_name,
                     correlation=item["correlation"],
+                    relation_type=item.get("relation_type", "관심"),
                     reason=item["reason"],
                 )
             )
@@ -287,6 +288,7 @@ def compute_relations(
                     ticker=cand,
                     name=cand_name,
                     correlation=item["correlation"],
+                    relation_type=item.get("relation_type", "관심"),
                     reason=item["reason"],
                 )
             )
@@ -307,6 +309,7 @@ def compute_relations(
                     ticker=cand,
                     name=cand_name,
                     correlation=item["correlation"],
+                    relation_type=item.get("relation_type", "관심"),
                     reason=item["reason"],
                 )
             )
@@ -330,6 +333,7 @@ def compute_relations(
                         ticker=cand,
                         name=cand_name,
                         correlation=item["correlation"],
+                        relation_type=item.get("relation_type", "관심"),
                         reason=item["reason"],
                     )
                 )
@@ -358,7 +362,8 @@ def compute_relations(
                         ticker=cand,
                         name=cand_name,
                         correlation=corr,
-                        reason=f"가격 동조화 (상관계수 {corr:.2f})",
+                        relation_type="관심",
+                        reason="",
                     )
                 )
 
@@ -514,7 +519,7 @@ async def compute_impact(ticker: str) -> list[ImpactItem]:
     company_name = _get_name(ticker, registry)
 
     news_items = await fetch_news(ticker)
-    ranked = await rank_news(news_items)
+    ranked = await rank_news(news_items, ticker=ticker, company_name=company_name)
     news_titles = [n.title for n in ranked[:10]]
 
     relation_data = compute_relations(ticker)
@@ -539,6 +544,7 @@ async def compute_impact(ticker: str) -> list[ImpactItem]:
             name=item["name"],
             impact=item["impact"],
             reason=item["reason"],
+            trigger_news=item.get("trigger_news"),
         )
         for item in raw_items
     ]

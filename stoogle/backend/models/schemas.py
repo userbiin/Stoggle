@@ -95,6 +95,7 @@ class RelatedCompany(BaseModel):
     ticker: str
     name: str
     correlation: float
+    relation_type: str = "관심"  # 경쟁사|공급사|납품업체|협력사|계열사|고객사|유통사|관심
     reason: str
 
 
@@ -103,6 +104,7 @@ class ImpactItem(BaseModel):
     name: str
     impact: str  # positive | negative
     reason: str
+    trigger_news: Optional[str] = None  # 이 영향을 유발한 뉴스 헤드라인
 
 
 class RelationsResponse(BaseModel):
@@ -111,3 +113,4 @@ class RelationsResponse(BaseModel):
     links: list[RelationLink]
     related_companies: list[RelatedCompany]
     impact: list[ImpactItem] = []
+    is_analyzing: bool = False  # 첫 조회 시 백그라운드 LLM 분석 중인 경우 True

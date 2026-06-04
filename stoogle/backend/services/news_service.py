@@ -164,9 +164,15 @@ def _categorize(title: str) -> str:
     return "일반"
 
 
-async def rank_news(items: list[NewsItem]) -> list[NewsItem]:
+async def rank_news(
+    items: list[NewsItem],
+    ticker: str = "",
+    company_name: str = "",
+) -> list[NewsItem]:
     """
     Claude로 감성 분석 + 시장 중요도 순 정렬.
+    ticker/company_name을 제공하면 해당 종목 관련 기사만 positive/negative로 분류하고
+    무관한 기사(타사 기사, 거시 뉴스 등)는 neutral로 설정한다.
     ANTHROPIC_API_KEY 미설정 또는 호출 실패 시 키워드 기반 폴백.
     """
     if not items:
@@ -177,14 +183,20 @@ async def rank_news(items: list[NewsItem]) -> list[NewsItem]:
         if not api_key:
             return _rank_by_heuristic(items)
 
+        subject = company_name or ticker or "해당 종목"
         titles = "\n".join(f"{i + 1}. {item.title}" for i, item in enumerate(items))
         client = anthropic.AsyncAnthropic(api_key=api_key)
         msg = await client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=512,
             messages=[{"role": "user", "content": (
-                "한국 주식 뉴스 제목들의 감성과 시장 중요도를 분석하세요.\n\n"
+                f"다음은 '{subject}' 종목의 뉴스 피드입니다.\n"
+                f"각 기사를 '{subject}'의 주가에 미치는 영향 기준으로 분석하세요.\n\n"
                 f"{titles}\n\n"
+                "분류 기준:\n"
+                f"- positive: '{subject}'에 직접 호재인 기사\n"
+                f"- negative: '{subject}'에 직접 악재인 기사\n"
+                f"- neutral: '{subject}'와 무관하거나 다른 회사 위주 기사, 간접적·거시적 기사\n\n"
                 "반드시 JSON 배열로만 응답하세요 (다른 텍스트 없이):\n"
                 '[{"index": 1, "sentiment": "positive", "score": 8}, ...]'
             )}],

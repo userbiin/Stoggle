@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git reset *)",
+      "Bash(ls /usr/local/python/ 2>/dev/null; which python3; python3 --version)",
+      "Read(//usr/local/python/**)"
+    ]
+  }
+}

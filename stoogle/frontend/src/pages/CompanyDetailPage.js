@@ -139,13 +139,16 @@ export default function CompanyDetailPage() {
           <NewsSection news={news} />
         </div>
 
-        {/* 관계 그래프 + 관계 목록 */}
+        {/* ── 비즈니스 관계사: 과거 뉴스·공시 소급 LLM 분석 → DB 캐시 ─── */}
         <div style={styles.grid2}>
           <RelationGraph data={relations} centerId={ticker} />
-          <RelationList companies={relations?.related_companies || []} />
+          <RelationList
+            companies={relations?.related_companies || []}
+            isAnalyzing={relations?.is_analyzing ?? false}
+          />
         </div>
 
-        {/* 영향 종목 */}
+        {/* ── 뉴스 연동 종목: 최신 뉴스 기준 주가 변동 가능 기업 ──────── */}
         <ImpactList items={impact} />
       </div>
     </div>

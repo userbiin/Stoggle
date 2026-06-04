@@ -1,85 +1,123 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const styles = {
+const TYPE_STYLE = {
+  '경쟁사':   { bg: 'var(--color-negative-bg)',  color: 'var(--color-negative)' },
+  '경쟁':     { bg: 'var(--color-negative-bg)',  color: 'var(--color-negative)' },
+  '공급사':   { bg: 'var(--color-accent-light)',  color: 'var(--color-accent)' },
+  '납품업체': { bg: 'var(--color-accent-light)',  color: 'var(--color-accent)' },
+  '공급망':   { bg: 'var(--color-accent-light)',  color: 'var(--color-accent)' },
+  '협력사':   { bg: 'var(--color-positive-bg)',   color: 'var(--color-positive)' },
+  '협력':     { bg: 'var(--color-positive-bg)',   color: 'var(--color-positive)' },
+  '계열사':   { bg: '#f0eeff',                    color: 'var(--color-brand)' },
+  '계열':     { bg: '#f0eeff',                    color: 'var(--color-brand)' },
+  '고객사':   { bg: '#fff8e1',                    color: '#b7860b' },
+  '유통사':   { bg: '#fff8e1',                    color: '#b7860b' },
+};
+const DEFAULT_TYPE = { bg: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' };
+
+const s = {
   card: {
-    background: 'var(--color-surface)', border: '1px solid var(--color-border)',
-    borderRadius: 'var(--radius-md)', padding: '20px', boxShadow: 'var(--shadow-sm)',
+    background: 'var(--color-surface)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-md)',
+    padding: '20px',
+    boxShadow: 'var(--shadow-sm)',
   },
-  title: { fontSize: '15px', fontWeight: '600', marginBottom: '12px', color: 'var(--color-text-primary)' },
-  list: { display: 'flex', flexDirection: 'column', gap: '0' },
+  header: {
+    fontSize: '15px', fontWeight: '600',
+    color: 'var(--color-text-primary)',
+    marginBottom: '4px',
+  },
+  sub: {
+    fontSize: '12px', color: 'var(--color-text-muted)',
+    marginBottom: '16px',
+  },
   item: {
     padding: '12px 0',
     borderBottom: '1px solid var(--color-border)',
   },
-  itemHeader: {
+  row: {
     display: 'flex', alignItems: 'center', gap: '10px',
-    cursor: 'pointer', transition: 'opacity var(--transition)',
-    marginBottom: '8px',
+    cursor: 'pointer', marginBottom: '8px',
   },
-  name: { fontSize: '14px', fontWeight: '600', color: 'var(--color-text-primary)', flex: 1 },
-  ticker: { fontSize: '11px', color: 'var(--color-text-muted)', fontWeight: '400', marginLeft: '4px' },
-  corr: { textAlign: 'right', flexShrink: 0, width: '56px' },
-  corrValue: { fontSize: '12px', fontWeight: '700', color: 'var(--color-accent)' },
-  corrBar: {
-    height: '3px', borderRadius: '2px', background: 'var(--color-border)',
-    marginTop: '3px', overflow: 'hidden',
+  badge: {
+    fontSize: '11px', fontWeight: '700',
+    padding: '2px 8px', borderRadius: '99px',
+    flexShrink: 0, whiteSpace: 'nowrap',
   },
-  corrFill: { height: '100%', borderRadius: '2px', background: 'var(--color-accent)', transition: 'width 0.5s ease' },
-  reasonBox: {
+  name: {
+    fontSize: '14px', fontWeight: '600',
+    color: 'var(--color-text-primary)', flex: 1,
+  },
+  ticker: {
+    fontSize: '11px', color: 'var(--color-text-muted)',
+    fontWeight: '400', marginLeft: '4px',
+  },
+  reason: {
     background: 'var(--color-accent-light)',
     border: '1px solid #d0e4fc',
     borderRadius: '6px',
-    padding: '7px 10px',
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '6px',
-  },
-  reasonLabel: {
-    fontSize: '10px', fontWeight: '700', color: 'var(--color-accent)',
-    letterSpacing: '0.04em', textTransform: 'uppercase',
-    flexShrink: 0, paddingTop: '1px',
-  },
-  reasonText: {
+    padding: '6px 10px',
     fontSize: '12px', color: '#1a3c6e', lineHeight: '1.6',
+  },
+  empty: {
+    padding: '24px 0', textAlign: 'center',
+    fontSize: '13px', color: 'var(--color-text-muted)',
   },
 };
 
-export default function RelationList({ companies = [] }) {
+const analyzing = {
+  display: 'flex', alignItems: 'center', gap: '8px',
+  background: '#f0eeff', border: '1px solid #d0c8f8',
+  borderRadius: '8px', padding: '10px 14px',
+  fontSize: '12px', color: 'var(--color-brand)',
+  marginBottom: '14px',
+};
+
+export default function RelationList({ companies = [], isAnalyzing = false }) {
   const navigate = useNavigate();
 
   return (
-    <div style={styles.card}>
-      <div style={styles.title}>연관 기업 목록</div>
-      <div style={styles.list}>
-        {companies.map((c) => (
-          <div key={c.ticker} style={styles.item}>
-            <div
-              style={styles.itemHeader}
-              onClick={() => navigate(`/company/${c.ticker}`)}
-              onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.7')}
-              onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-            >
-              <div style={styles.name}>
-                {c.name}
-                <span style={styles.ticker}>{c.ticker}</span>
-              </div>
-              <div style={styles.corr}>
-                <div style={styles.corrValue}>{(c.correlation * 100).toFixed(0)}%</div>
-                <div style={styles.corrBar}>
-                  <div style={{ ...styles.corrFill, width: `${c.correlation * 100}%` }} />
+    <div style={s.card}>
+      <div style={s.header}>비즈니스 관계사</div>
+      <div style={s.sub}>과거 뉴스·공시 소급 분석 기반 — 협력사 · 공급업체 · 경쟁사 등 실제 사업 관계 기업</div>
+
+      {isAnalyzing && (
+        <div style={analyzing}>
+          <span>⏳</span>
+          <span>LLM이 과거 뉴스·공시를 분석 중입니다. 잠시 후 새로고침하면 결과를 확인할 수 있습니다.</span>
+        </div>
+      )}
+
+      {companies.length === 0 ? (
+        <div style={s.empty}>
+          {isAnalyzing ? '분석 완료 후 관계사 목록이 표시됩니다.' : '관계사 정보가 없습니다.'}
+        </div>
+      ) : (
+        companies.map((c) => {
+          const typeStyle = TYPE_STYLE[c.relation_type] || DEFAULT_TYPE;
+          return (
+            <div key={c.ticker} style={s.item}>
+              <div
+                style={s.row}
+                onClick={() => navigate(`/company/${c.ticker}`)}
+                onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.7')}
+                onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+              >
+                <span style={{ ...s.badge, background: typeStyle.bg, color: typeStyle.color }}>
+                  {c.relation_type || '관심'}
+                </span>
+                <div style={s.name}>
+                  {c.name}
+                  <span style={s.ticker}>{c.ticker}</span>
                 </div>
               </div>
+              {c.reason && <div style={s.reason}>{c.reason}</div>}
             </div>
-            {c.reason && (
-              <div style={styles.reasonBox}>
-                <span style={styles.reasonLabel}>AI</span>
-                <span style={styles.reasonText}>{c.reason}</span>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+          );
+        })
+      )}
     </div>
   );
 }

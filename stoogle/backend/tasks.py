@@ -70,6 +70,11 @@ app.conf.beat_schedule = {
         "task": "tasks.crawl_all_news",
         "schedule": crontab(minute=0),
     },
+    # EXAONE 채점 기반 뉴스 파이프라인 (1시간, :30 실행 — crawl_all_news와 30분 엇갈림)
+    "run-exaone-news-pipeline": {
+        "task": "tasks.run_exaone_news_pipeline",
+        "schedule": crontab(minute=30),
+    },
     # 주요 종목 뉴스 사전 수집 (매일 오전 8시 30분)
     "prefetch-news-daily": {
         "task": "tasks.prefetch_news_for_major_stocks",
@@ -347,6 +352,63 @@ def crawl_all_news(self):
         _trigger_incremental_relation_update.delay(updated_tickers)
 
     return {"status": "ok", "crawled": results}
+
+
+@app.task(bind=True, max_retries=1, default_retry_delay=120)
+def run_exaone_news_pipeline(self):
+    """
+    EXAONE 채점 기반 뉴스 파이프라인 (1시간 주기, :30 실행).
+
+    RSS + 네이버 섹션 수집 → 본문 fetch → 종목 매칭 → EXAONE 채점 순으로 처리.
+    PASS_THRESHOLD(4점) 이상 기사만 해당 종목의 Redis 뉴스 캐시 선두에 삽입한다.
+    EXAONE_API_KEY 미설정 시 graceful skip.
+    """
+    import os
+    if not os.getenv("EXAONE_API_KEY"):
+        logger.info("EXAONE_API_KEY 미설정 — run_exaone_news_pipeline skip")
+        return {"status": "skipped", "reason": "no_api_key"}
+
+    from agents.naver_news_crawler import run_pipeline
+    from services.cache_service import get_news_cache, set_news_cache
+
+    try:
+        articles = asyncio.run(run_pipeline())
+    except Exception as exc:
+        logger.warning("EXAONE 파이프라인 실패: %s", exc)
+        raise self.retry(exc=exc)
+
+    # 종목별로 그룹핑 후 기존 캐시에 prepend
+    by_ticker: dict[str, list[dict]] = {}
+    for a in articles:
+        by_ticker.setdefault(a["ticker"], []).append(a)
+
+    direction_to_sentiment = {"상승": "positive", "하락": "negative", "중립": "neutral"}
+    updated = {}
+    for ticker, items in by_ticker.items():
+        existing = get_news_cache(ticker) or []
+        existing_urls = {e.get("url") for e in existing}
+
+        new_items = []
+        for idx, a in enumerate(items):
+            if a["url"] in existing_urls:
+                continue
+            new_items.append({
+                "id": -(idx + 1),           # 음수 id로 EXAONE 기사임을 표시
+                "title": a["title"],
+                "source": "exaone",
+                "published_at": "",
+                "url": a["url"],
+                "sentiment": direction_to_sentiment.get(a["direction"], "neutral"),
+                "summary": a["reason"],
+                "category": None,
+            })
+
+        if new_items:
+            set_news_cache(ticker, new_items + existing)
+            updated[ticker] = len(new_items)
+
+    logger.info("EXAONE 파이프라인 완료: %d건 → %d 종목 캐시 갱신", len(articles), len(updated))
+    return {"status": "ok", "inserted": updated}
 
 
 @app.task

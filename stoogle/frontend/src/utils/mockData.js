@@ -104,6 +104,7 @@ export const mockNews = [
 ];
 
 export const mockRelations = {
+  is_analyzing: false,
   nodes: [
     { id: "005930", name: "삼성전자", group: 0, size: 40 },
     { id: "000660", name: "SK하이닉스", group: 1, size: 28 },
@@ -128,20 +129,20 @@ export const mockRelations = {
     { source: "005930", target: "000270", value: 0.28, type: "협력" },
   ],
   related_companies: [
-    { ticker: "000660", name: "SK하이닉스", correlation: 0.82, reason: "메모리 반도체 직접 경쟁사" },
-    { ticker: "066570", name: "LG전자", correlation: 0.75, reason: "가전·디스플레이 사업 경쟁" },
-    { ticker: "003550", name: "LG", correlation: 0.70, reason: "그룹사 연관 지수 동반 움직임" },
-    { ticker: "207940", name: "삼성바이오로직스", correlation: 0.58, reason: "삼성 계열사 동반 흐름" },
-    { ticker: "035420", name: "NAVER", correlation: 0.45, reason: "AI 인프라 협력 파트너" },
+    { ticker: "000660", name: "SK하이닉스", correlation: 0.82, relation_type: "경쟁사", reason: "메모리 반도체 직접 경쟁사 — DRAM·HBM 시장 공유" },
+    { ticker: "009150", name: "삼성전기", correlation: 0.76, relation_type: "계열사", reason: "삼성 계열사 — MLCC·카메라모듈 핵심 부품 납품" },
+    { ticker: "051910", name: "LG화학", correlation: 0.61, relation_type: "공급사", reason: "반도체 소재(포토레지스트·화학품) 공급 계약" },
+    { ticker: "035420", name: "NAVER", correlation: 0.45, relation_type: "협력사", reason: "AI·클라우드 인프라 공동 개발 협력" },
+    { ticker: "066570", name: "LG전자", correlation: 0.38, relation_type: "고객사", reason: "가전·TV용 반도체 칩 주요 고객사" },
   ],
 };
 
 export const mockImpact = [
-  { ticker: "009150", name: "삼성전기", impact: "positive", reason: "HBM3E 공급 확대로 MLCC·카메라모듈 등 핵심 부품 동반 수주 증가 기대" },
-  { ticker: "028260", name: "삼성물산", impact: "positive", reason: "삼성전자 반도체 파운드리 투자 확대에 따른 건설·EPC 수주 수혜 예상" },
-  { ticker: "000660", name: "SK하이닉스", impact: "positive", reason: "엔비디아 HBM 공급 경쟁 심화로 SK하이닉스 프리미엄 HBM 단가 협상력 강화" },
-  { ticker: "086520", name: "에코프로", impact: "negative", reason: "IT·반도체 섹터로 기관 자금 집중되며 배터리주 단기 수급 약화 우려" },
-  { ticker: "247540", name: "에코프로비엠", impact: "negative", reason: "반도체 설비투자 확대로 전기차 배터리 소재 투자 우선순위 하락 가능성" },
+  { ticker: "009150", name: "삼성전기", impact: "positive", reason: "HBM3E 공급 확대로 MLCC·카메라모듈 등 핵심 부품 동반 수주 증가 기대", trigger_news: "삼성전자, 엔비디아에 HBM3E 최종 납품 승인 완료" },
+  { ticker: "028260", name: "삼성물산", impact: "positive", reason: "삼성전자 반도체 파운드리 투자 확대에 따른 건설·EPC 수주 수혜 예상", trigger_news: "삼성전자, 평택 4공장 투자 2025년 본격화 선언" },
+  { ticker: "000660", name: "SK하이닉스", impact: "positive", reason: "엔비디아 HBM 공급 경쟁 심화로 SK하이닉스 프리미엄 HBM 단가 협상력 강화", trigger_news: "삼성전자, 엔비디아에 HBM3E 최종 납품 승인 완료" },
+  { ticker: "086520", name: "에코프로", impact: "negative", reason: "IT·반도체 섹터로 기관 자금 집중되며 배터리주 단기 수급 약화 우려", trigger_news: "삼성전자, 평택 4공장 투자 2025년 본격화 선언" },
+  { ticker: "247540", name: "에코프로비엠", impact: "negative", reason: "반도체 설비투자 확대로 전기차 배터리 소재 투자 우선순위 하락 가능성", trigger_news: "삼성전자, 평택 4공장 투자 2025년 본격화 선언" },
 ];
 
 // 주가 히스토리 생성 헬퍼

@@ -14,12 +14,17 @@ try:
     from langchain.agents import AgentExecutor, create_openai_tools_agent
     from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
     from langchain.tools import tool
-    from anthropic import AsyncAnthropic
     LANGCHAIN_AVAILABLE = True
 except ImportError:
     LANGCHAIN_AVAILABLE = False
     def tool(f):
         return f
+
+try:
+    from anthropic import AsyncAnthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
 
 from services.news_service import fetch_news, rank_news
 from evaluation.observability import track_agent
@@ -139,10 +144,11 @@ _IMPACT_SYSTEM_PROMPT = """\
 - 영향이 명확하지 않은 종목은 제외하세요 (과잉 추론 금지).
 - impact는 반드시 "positive" 또는 "negative" 중 하나여야 합니다.
 - reason은 한국어 1문장, 구체적인 근거(공급망·경쟁·계열사 등)를 포함하세요.
+- trigger_news는 이 영향 판단의 근거가 된 뉴스 헤드라인을 입력된 목록에서 정확히 그대로 옮기세요.
 - 반드시 아래 JSON 배열 형식으로만 응답하세요. 다른 텍스트는 포함하지 마세요.
 
 [
-  {{"ticker": "종목코드", "name": "기업명", "impact": "positive|negative", "reason": "근거"}},
+  {{"ticker": "종목코드", "name": "기업명", "impact": "positive|negative", "reason": "근거", "trigger_news": "근거 뉴스 헤드라인"}},
   ...
 ]
 """
@@ -170,7 +176,7 @@ async def run_impact_analysis(
     [{"ticker": ..., "name": ..., "impact": "positive|negative", "reason": ...}, ...]
     빈 리스트를 반환해도 안전하다 (fallback).
     """
-    if not LANGCHAIN_AVAILABLE or not os.getenv("ANTHROPIC_API_KEY"):
+    if not ANTHROPIC_AVAILABLE or not os.getenv("ANTHROPIC_API_KEY"):
         return []
 
     if not news_titles or not related_companies:
@@ -223,7 +229,10 @@ async def run_impact_analysis(
             reason = item.get("reason", "")
             name = item.get("name", "")
             if t in valid_tickers and impact in ("positive", "negative") and reason:
-                result.append({"ticker": t, "name": name, "impact": impact, "reason": reason})
+                result.append({
+                    "ticker": t, "name": name, "impact": impact, "reason": reason,
+                    "trigger_news": item.get("trigger_news") or None,
+                })
 
         return result
 

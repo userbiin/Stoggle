@@ -13,23 +13,27 @@ _bg_tasks: set = set()
 
 
 async def _discover_background(ticker: str) -> None:
-    """뉴스+DART 기반 관계 발굴을 백그라운드에서 실행."""
+    """
+    첫 조회 시: 과거 뉴스 소급(멀티페이지) + DART 공시 + LLM 분석으로 비즈니스 관계 발굴.
+    결과는 RelationCache + company_edges에 저장되며, 이후 요청부터 DB에서 로드된다.
+    """
     try:
-        from agents.relation_discovery_agent import discover_relations
+        from agents.relation_discovery_agent import discover_relations_retroactive
 
-        count = await discover_relations(ticker)
-        logger.info("백그라운드 관계 발굴 완료 [%s]: %d건", ticker, count)
+        count = await discover_relations_retroactive(ticker)
+        logger.info("첫 조회 관계 발굴 완료 [%s]: %d건", ticker, count)
     except Exception as e:
-        logger.warning("백그라운드 관계 발굴 실패 [%s]: %s", ticker, e)
+        logger.warning("첫 조회 관계 발굴 실패 [%s]: %s", ticker, e)
 
 
 @router.get("/relations/{ticker}", response_model=RelationsResponse)
 async def get_relations(ticker: str):
     ticker = ticker.upper()
 
-    # 발굴된 관계가 없으면 백그라운드에서 discovery 트리거
-    # (이번 요청에는 캐시·폴백 결과를 반환하고, 다음 요청부터 발굴 결과 사용)
-    if not has_discovered_relations(ticker):
+    # 발굴된 관계가 없으면 소급 발굴을 백그라운드에서 트리거 (첫 조회 1회만)
+    # 이번 요청에는 correlation 캐시·폴백 결과를 반환하고, 다음 요청부터 DB 결과 사용
+    first_time = not has_discovered_relations(ticker)
+    if first_time:
         task = asyncio.create_task(_discover_background(ticker))
         _bg_tasks.add(task)
         task.add_done_callback(_bg_tasks.discard)
@@ -43,4 +47,5 @@ async def get_relations(ticker: str):
         links=relation_data["links"],
         related_companies=relation_data["related_companies"],
         impact=impact,
+        is_analyzing=first_time,
     )

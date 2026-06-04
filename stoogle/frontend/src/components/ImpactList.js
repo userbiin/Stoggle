@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const styles = {
+const s = {
   card: {
     background: 'var(--color-surface)',
     border: '1px solid var(--color-border)',
@@ -10,92 +10,87 @@ const styles = {
     boxShadow: 'var(--shadow-sm)',
   },
   header: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '16px',
-  },
-  title: {
-    fontSize: '15px',
-    fontWeight: '600',
+    fontSize: '15px', fontWeight: '600',
     color: 'var(--color-text-primary)',
+    marginBottom: '4px',
   },
-  chipRow: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px',
+  sub: {
+    fontSize: '12px', color: 'var(--color-text-muted)',
     marginBottom: '20px',
   },
-  chip: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '6px 12px',
-    borderRadius: 'var(--radius-full)',
-    fontSize: '13px',
-    fontWeight: '600',
+  group: {
+    marginBottom: '20px',
+  },
+  newsRow: {
+    display: 'flex', alignItems: 'flex-start', gap: '8px',
+    background: '#f8f9fa',
+    border: '1px solid var(--color-border)',
+    borderRadius: '8px',
+    padding: '10px 14px',
+    marginBottom: '10px',
+  },
+  newsIcon: {
+    fontSize: '13px', flexShrink: 0, marginTop: '1px',
+  },
+  newsTitle: {
+    fontSize: '13px', fontWeight: '500',
+    color: 'var(--color-text-primary)', lineHeight: '1.5',
+  },
+  item: {
+    display: 'flex', alignItems: 'flex-start', gap: '10px',
+    padding: '10px 12px',
+    borderRadius: '8px',
+    marginBottom: '6px',
     cursor: 'pointer',
-    border: '1px solid transparent',
     transition: 'opacity var(--transition)',
-    whiteSpace: 'nowrap',
   },
-  chipArrow: {
-    fontSize: '10px',
-    fontWeight: '700',
+  dirBadge: {
+    fontSize: '11px', fontWeight: '700',
+    padding: '3px 8px', borderRadius: '99px',
+    flexShrink: 0, whiteSpace: 'nowrap', marginTop: '1px',
   },
-  chipTicker: {
-    fontSize: '11px',
-    fontWeight: '400',
-    opacity: 0.7,
+  nameBlock: {
+    flex: 1, minWidth: 0,
+  },
+  name: {
+    fontSize: '14px', fontWeight: '600',
+    color: 'var(--color-text-primary)',
+  },
+  ticker: {
+    fontSize: '11px', color: 'var(--color-text-muted)',
+    fontWeight: '400', marginLeft: '4px',
+  },
+  reason: {
+    fontSize: '12px', lineHeight: '1.6',
+    marginTop: '3px',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
   },
   divider: {
     borderTop: '1px solid var(--color-border)',
-    marginBottom: '16px',
+    margin: '4px 0 16px',
   },
-  insightBox: {
-    background: 'var(--color-accent-light)',
-    border: '1px solid #c5d8f8',
-    borderRadius: 'var(--radius-md)',
-    padding: '14px 18px',
-  },
-  insightHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    marginBottom: '8px',
-  },
-  insightLabel: {
-    fontSize: '12px',
-    fontWeight: '700',
-    color: 'var(--color-accent)',
-    letterSpacing: '0.03em',
-    textTransform: 'uppercase',
-  },
-  insightText: {
-    fontSize: '13px',
-    lineHeight: '1.75',
-    color: '#1a3c6e',
+  empty: {
+    padding: '24px 0', textAlign: 'center',
+    fontSize: '13px', color: 'var(--color-text-muted)',
   },
 };
 
-function buildInsightText(items) {
-  const pos = items.filter((i) => i.impact === 'positive');
-  const neg = items.filter((i) => i.impact === 'negative');
-  const parts = [];
-
-  if (pos.length) {
-    const names = pos.map((i) => i.name).join('·');
-    const reasons = pos.map((i) => i.reason).join(' 또한 ');
-    parts.push(`${names}는 ${reasons}`);
+function groupByNews(items) {
+  const NO_NEWS = '__no_news__';
+  const map = {};
+  for (const item of items) {
+    const key = item.trigger_news || NO_NEWS;
+    if (!map[key]) map[key] = [];
+    map[key].push(item);
   }
-  if (neg.length) {
-    const names = neg.map((i) => i.name).join('·');
-    const reasons = neg.map((i) => i.reason).join(' 또한 ');
-    const connector = pos.length ? ' 반면 ' : '';
-    parts.push(`${connector}${names}는 ${reasons}`);
-  }
-
-  return parts.join('. ') + (parts.length ? '.' : '');
+  return Object.entries(map).sort(([a], [b]) => {
+    if (a === NO_NEWS) return 1;
+    if (b === NO_NEWS) return -1;
+    return 0;
+  });
 }
 
 export default function ImpactList({ items = [] }) {
@@ -103,47 +98,62 @@ export default function ImpactList({ items = [] }) {
 
   if (!items.length) return null;
 
-  const insightText = buildInsightText(items);
+  const groups = groupByNews(items);
+  const hasTrigger = groups.some(([key]) => key !== '__no_news__');
 
   return (
-    <div style={styles.card}>
-      <div style={styles.header}>
-        <span style={styles.title}>주가 영향 예상 종목</span>
+    <div style={s.card}>
+      <div style={s.header}>뉴스 연동 종목</div>
+      <div style={s.sub}>
+        {hasTrigger
+          ? '최신 뉴스 기준 — 함께 주가 변동 가능성이 있는 기업 (순서는 중요도와 무관)'
+          : '최근 뉴스 기반 — 함께 주가 변동 가능성이 있는 기업 (순서는 중요도와 무관)'}
       </div>
 
-      <div style={styles.chipRow}>
-        {items.map((item) => {
-          const isPos = item.impact === 'positive';
-          return (
-            <span
-              key={item.ticker}
-              style={{
-                ...styles.chip,
-                background: isPos ? 'var(--color-positive-bg)' : 'var(--color-negative-bg)',
-                color: isPos ? 'var(--color-positive)' : 'var(--color-negative)',
-                borderColor: isPos ? '#a8d5b5' : '#f5b7b5',
-              }}
-              onClick={() => navigate(`/company/${item.ticker}`)}
-              onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.75')}
-              onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-              title={item.reason}
-            >
-              <span style={styles.chipArrow}>{isPos ? '▲' : '▼'}</span>
-              {item.name}
-              <span style={styles.chipTicker}>{item.ticker}</span>
-            </span>
-          );
-        })}
-      </div>
+      {groups.map(([newsKey, groupItems]) => {
+        const showNews = newsKey !== '__no_news__';
+        return (
+          <div key={newsKey} style={s.group}>
+            {showNews && (
+              <div style={s.newsRow}>
+                <span style={s.newsIcon}>📰</span>
+                <span style={s.newsTitle}>{newsKey}</span>
+              </div>
+            )}
+            {!showNews && hasTrigger && <div style={s.divider} />}
 
-      <div style={styles.divider} />
-
-      <div style={styles.insightBox}>
-        <div style={styles.insightHeader}>
-          <span style={styles.insightLabel}>AI 인사이트</span>
-        </div>
-        <div style={styles.insightText}>{insightText}</div>
-      </div>
+            {groupItems.map((item) => {
+              const isPos = item.impact === 'positive';
+              const bg = isPos ? 'var(--color-positive-bg)' : 'var(--color-negative-bg)';
+              const color = isPos ? 'var(--color-positive)' : 'var(--color-negative)';
+              return (
+                <div
+                  key={item.ticker}
+                  style={{ ...s.item, background: bg }}
+                  onClick={() => navigate(`/company/${item.ticker}`)}
+                  onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.75')}
+                  onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                >
+                  <span style={{ ...s.dirBadge, background: color, color: '#fff' }}>
+                    {isPos ? '▲' : '▼'}
+                  </span>
+                  <div style={s.nameBlock}>
+                    <div style={s.name}>
+                      {item.name}
+                      <span style={s.ticker}>{item.ticker}</span>
+                    </div>
+                    {item.reason && (
+                      <div style={{ ...s.reason, color }}>
+                        {item.reason}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 }

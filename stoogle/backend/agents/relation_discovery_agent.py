@@ -453,10 +453,10 @@ def _chunk_articles(
 
 def _format_articles_text(articles: list[tuple[str, str]], offset: int = 0) -> str:
     lines = []
-    for i, (title, summary) in enumerate(articles, start=offset + 1):
+    for i, (title, body) in enumerate(articles, start=offset + 1):
         lines.append(f"[뉴스 {i}] {title}")
-        if summary:
-            lines.append(f"  요약: {summary}")
+        if body:
+            lines.append(f"  본문: {body[:1500]}")
     return "\n".join(lines)
 
 
@@ -574,14 +574,32 @@ async def discover_relations_retroactive(ticker: str, max_articles: int = 150) -
     return count
 
 
+async def _fetch_article_body(client, sem, url: str) -> str:
+    """기사 URL에서 본문을 fetch하여 반환. 실패 시 빈 문자열."""
+    import asyncio
+    import trafilatura
+    async with sem:
+        try:
+            r = await client.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            r.raise_for_status()
+            html = r.text
+        except Exception:
+            return ""
+    return await asyncio.to_thread(lambda: trafilatura.extract(html) or "")
+
+
 async def _get_news_text_multipage(
-    ticker: str, pages: int = 5
+    ticker: str, pages: int = 5, fetch_bodies: bool = True, body_limit: int = 30
 ) -> list[tuple[str, str]]:
     """
     네이버 금융에서 여러 페이지 뉴스를 수집한다.
-    이미 NewsCache에 있는 내용과 합산하면 과거 기사 커버리지가 높아진다.
+    fetch_bodies=True 시 기사 본문까지 비동기 fetch → LLM 컨텍스트 대폭 향상.
+    body_limit: 본문 fetch할 기사 수 상한 (비용/시간 제한)
     """
-    results: list[tuple[str, str]] = []
+    import asyncio
+    import httpx
+
+    raw_items = []
     try:
         from services.news_service import fetch_news
 
@@ -589,10 +607,33 @@ async def _get_news_text_multipage(
             try:
                 items = await fetch_news(ticker, page=page, force=True)
                 for item in items:
-                    results.append((item.title, item.summary or ""))
+                    raw_items.append((item.title, item.summary or "", item.url))
             except Exception as e:
                 logger.debug("[%s] page=%d 수집 실패: %s", ticker, page, e)
                 break
     except Exception as e:
         logger.warning("[%s] 멀티페이지 수집 실패: %s", ticker, e)
+        return []
+
+    if not fetch_bodies or not raw_items:
+        return [(t, s) for t, s, _ in raw_items]
+
+    # 본문 비동기 fetch (상위 body_limit건만)
+    targets = raw_items[:body_limit]
+    sem = asyncio.Semaphore(10)
+    limits = httpx.Limits(max_connections=15)
+    async with httpx.AsyncClient(follow_redirects=True, limits=limits) as client:
+        bodies = await asyncio.gather(
+            *[_fetch_article_body(client, sem, url) for _, _, url in targets]
+        )
+
+    results = []
+    for (title, summary, _), body in zip(targets, bodies):
+        text = body[:1500] if body else summary  # 본문 우선, 없으면 요약
+        results.append((title, text))
+
+    # body_limit 초과분은 제목+요약만
+    for title, summary, _ in raw_items[body_limit:]:
+        results.append((title, summary))
+
     return results
