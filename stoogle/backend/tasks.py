@@ -70,6 +70,11 @@ app.conf.beat_schedule = {
         "task": "tasks.crawl_all_news",
         "schedule": crontab(minute=0),
     },
+    # 카테고리(RSS + 섹션 + 네이버 API) 뉴스 수집 (1시간)
+    "crawl-category-news": {
+        "task": "tasks.crawl_category_news",
+        "schedule": crontab(minute=0),
+    },
     # 주요 종목 뉴스 사전 수집 (매일 오전 8시 30분)
     "prefetch-news-daily": {
         "task": "tasks.prefetch_news_for_major_stocks",
@@ -501,6 +506,98 @@ def crawl_all_news(self):
         dedup_and_index_news.delay(news_for_dedup)
 
     return {"status": "ok", "crawled": results}
+
+
+@app.task(bind=True, max_retries=2, default_retry_delay=120)
+def crawl_category_news(self):
+    """
+    RSS + 네이버 섹션 크롤링 + 네이버 검색 API 3개 소스 통합 수집 (매시간).
+
+    crawl_all_news(종목별)와 독립된 파이프라인. 시장 전체에 영향을 줄 수 있는
+    거시 뉴스를 수집하여 KOSPI200 전종목 대상으로 영향 종목을 판별한다.
+
+    흐름:
+      1. news_aggregator.aggregate() — RSS / 섹션 크롤링 / 네이버 API 통합 수집
+      2. NewsCache DB upsert (ticker = 카테고리명)
+      3. summary_agent 병렬 요약 → NewsCache.summary 갱신
+      4. KOSPI200 전종목 relevance_agent 판별
+      5. dedup_and_index_news 체이닝
+    """
+    from agents.news_aggregator import aggregate
+    from agents.relevance_agent import Article as RelevArticle, run as relevance_run
+
+    try:
+        raw_articles = aggregate(window_minutes=70)
+    except Exception as e:
+        logger.error("뉴스 통합 수집 실패: %s", e)
+        return {"status": "error", "reason": str(e)}
+
+    if not raw_articles:
+        return {"status": "ok", "collected": 0}
+
+    logger.info(
+        "뉴스 통합 수집 완료: %d건 (소스별 — %s)",
+        len(raw_articles),
+        {st: sum(1 for a in raw_articles if a.source_type == st)
+         for st in ("rss", "section_crawl", "naver_api")},
+    )
+
+    class _Item:
+        __slots__ = ("url", "title", "summary", "source", "published_at", "sentiment", "category")
+
+        def __init__(self, a):
+            self.url = a.url
+            self.title = a.title
+            self.summary = a.summary
+            self.source = a.source
+            self.published_at = a.published_at
+            self.sentiment = "neutral"
+            self.category = a.category
+
+    items = [_Item(a) for a in raw_articles]
+
+    url_to_id: dict[str, int] = {}
+    cat_groups: dict[str, list] = {}
+    for item in items:
+        cat_groups.setdefault(item.category, []).append(item)
+
+    for category, cat_items in cat_groups.items():
+        url_to_id.update(_save_news_to_db(category, cat_items))
+
+    try:
+        asyncio.run(_summarize_articles("MARKET", [i.url for i in items]))
+    except Exception as e:
+        logger.warning("카테고리 뉴스 요약 실패: %s", e)
+
+    relev_articles = [
+        RelevArticle(url=i.url, title=i.title, summary=i.summary)
+        for i in items
+    ]
+
+    news_for_dedup: dict[str, list[tuple]] = {}
+    for ticker in KOSPI200_TICKERS:
+        try:
+            scored = asyncio.run(relevance_run(ticker, relev_articles))
+            if scored:
+                news_for_dedup[ticker] = [
+                    (s.article.url, s.article.title, s.article.summary, url_to_id.get(s.article.url))
+                    for s in scored
+                ]
+        except Exception as e:
+            logger.warning("relevance 판별 실패 (%s): %s", ticker, e)
+
+    if news_for_dedup:
+        dedup_and_index_news.delay(news_for_dedup)
+
+    return {
+        "status": "ok",
+        "collected": len(items),
+        "by_source": {
+            st: sum(1 for a in raw_articles if a.source_type == st)
+            for st in ("rss", "section_crawl", "naver_api")
+        },
+        "relevant_tickers": len(news_for_dedup),
+    }
 
 
 @app.task(bind=True, max_retries=1, default_retry_delay=60)

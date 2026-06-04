@@ -75,28 +75,32 @@ There are currently **no tests** and **no linting configs**. The project has no 
   - `news_agent.py`: LangChain news analysis (gpt-4o-mini)
   - `summary_agent.py`: LangChain news summarization
   - `relevance_agent.py`: two-stage relevance filter — rule-based prefilter then Ollama scoring via OpenAI-compatible endpoint (`OLLAMA_BASE_URL`/`OLLAMA_MODEL`); `EXAONE_API_KEY` in `.env.example` is not wired into the current code. Also defines its own `Article` dataclass (identical fields to `dedup_indexer.Article`) — `analysis_agent.py` imports the authoritative one from `dedup_indexer`.
-  - `dedup_indexer.py`: pgvector-based news deduplication; defines the shared `Article` dataclass (not yet wired to any Celery task — populates `NewsVector` on-demand only)
-  - `naver_news_crawler.py`: Naver News API crawler (uses `NAVER_CLIENT_ID`/`NAVER_CLIENT_SECRET`)
+  - `dedup_indexer.py`: pgvector-based news deduplication; defines the shared `Article` dataclass; called by `dedup_and_index_news` Celery task (chained from `crawl_all_news` and `crawl_category_news`)
+  - `naver_news_crawler.py`: Naver News Open API crawler (uses `NAVER_CLIENT_ID`/`NAVER_CLIENT_SECRET`) — called by `crawl_category_news` Celery task; returns list[dict] with fields `title`, `link`, `description`, `pubDate`, `category`
   - `analysis_agent.py`: unified ticker analysis — single Claude structured-output (tool_use) call producing `AnalysisResult {events, relations, summary, sentiment, impacts, evidence}`; boosts context with pgvector cosine search over past articles; saves to `InsightCache`; uses `ANTHROPIC_API_KEY` / `LLM_MODEL` (default `claude-sonnet-4-6`)
   - `dart_analyzer.py`: extracts key financials (revenue, op_profit, capex, inventory) from raw DART disclosure text via Claude structured output; saves to `DartAnalysis` table; uses `ANTHROPIC_API_KEY` / `DART_ANALYZER_MODEL` (default `claude-sonnet-4-6`)
   - `dart_indexer.py`: downloads DART corp-code XML + filings, splits into ≤400-token chunks, indexes into `DartChunk` pgvector table
   - `calibrator.py`: evaluates D+3 prediction accuracy and re-calibrates confidence scores via Isotonic Regression; embeds `reason` text into `PredictionVector`
-- `tasks.py`: Celery Beat schedule (10 tasks, `Asia/Seoul` timezone):
+- `tasks.py`: Celery Beat schedule (12 tasks, `Asia/Seoul` timezone):
 
 | Task | Schedule | Description |
 |---|---|---|
 | `fetch_top200_prices` | every 60s | KOSPI200 prices → Redis (skips outside 09:00–15:30 KST) |
+| `cache_eod_prices` | weekday 15:35 | Post-close prices → Redis 48h TTL (weekend coverage) |
 | `update_price_history` | daily 16:00 | 90-day OHLCV history → Redis (post-close) |
-| `crawl_all_news` | hourly | KOSPI200 news scrape + cache refresh |
+| `crawl_all_news` | hourly | KOSPI200 stock-specific news → NewsCache DB + relevance filter + dedup chain |
+| `crawl_category_news` | hourly | Naver Open API 정치/사회/경제 뉴스 → NewsCache DB + KOSPI200 relevance + dedup chain (skips if `NAVER_CLIENT_ID` unset) |
 | `prefetch_news_for_major_stocks` | daily 08:30 | Pre-warm top-30 tickers before market open |
-| `fetch_dart_filings` | daily 08:00 | DART filings via `dart-fss` (skips if `DART_API_KEY` unset) |
+| `fetch_dart_filings` | daily 08:00 | DART filings via `dart-fss` → `dart_analyzer` (skips if `DART_API_KEY` unset) |
 | `recompute_correlations` | daily 00:00 | Pearson correlation for all KOSPI200 pairs |
-| `update_relation_graphs` | Mon 09:00 | Full relation type reclassification (correlation + DART) |
+| `update_relation_graphs` | Mon 09:00 | Full relation type reclassification → RelationCache DB upsert |
 | `refresh_ticker_registry` | Mon 07:00 | KRX full ticker list → Redis (before market open) |
 | `calibrate_predictions` | daily 02:00 | Evaluate D+3 prediction accuracy + re-calibrate confidence |
 | `index_dart_disclosures` | daily 18:00 | DART filings + financials → pgvector index |
 
   Also defines `analyze_single_ticker(ticker)` as an on-demand Celery task. It is **not yet wired into any route** — integration into `insight.py` is pending.
+
+  `dedup_and_index_news` is a chained task (not Beat-scheduled): called by both `crawl_all_news` and `crawl_category_news` after relevance filtering; takes `{ticker: [(url, title, summary, news_cache_id), ...]}` 4-tuple format.
 
 **Cache pattern:** DB cache tables (NewsCache, InsightCache, RelationCache) are populated exclusively by Celery tasks. `cache_service.py` handles Redis hot-path caching (ticker registry TTL 7d, prices TTL 60s). API routes fetch live from pykrx/Naver/OpenAI.
 
