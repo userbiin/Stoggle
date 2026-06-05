@@ -11,7 +11,7 @@ httpx==0.27.0
 aiohttp==3.9.3
 
 # Data
-pykrx==1.0.46
+pykrx>=1.2.8
 pandas==2.2.1
 numpy==1.26.4
 

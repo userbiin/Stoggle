@@ -3,7 +3,9 @@
 ⚠️ 비용 단가(IN_PRICE / OUT_PRICE)는 Claude 공식 가격 기준으로 30일마다 갱신할 것.
    오래된 단가표는 비용을 20~40% 틀리게 계산한다.
 """
-from fastapi import APIRouter
+from typing import Optional
+
+from fastapi import APIRouter, Query
 from sqlalchemy import func
 
 from evaluation.observability import get_agent_stats
@@ -30,14 +32,21 @@ async def agent_stats():
 
 
 @router.get("/prediction-metrics")
-async def pred_metrics():
-    """Direction Accuracy + High-confidence Accuracy 집계."""
+async def pred_metrics(
+    model_version: Optional[str] = Query(
+        None,
+        description="필터할 model_version. 미지정 시 전체 집계. 예: backtest_v1",
+    )
+):
+    """Direction Accuracy + High-confidence Accuracy 집계. model_version으로 백테스트/라이브 분리."""
     from models.db_models import SessionLocal
     from evaluation.prediction_scorer import prediction_metrics
 
     db = SessionLocal()
     try:
-        return prediction_metrics(db)
+        result = prediction_metrics(db, model_version=model_version)
+        result["model_version"] = model_version or "all"
+        return result
     finally:
         db.close()
 

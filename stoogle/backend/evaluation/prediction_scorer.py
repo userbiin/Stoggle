@@ -71,23 +71,25 @@ def save_prediction(
 # Step B — D+3 채점
 # ─────────────────────────────────────────────────────────────────────────────
 
-def score_pending_predictions(db) -> dict:
+def score_pending_predictions(db, model_version: Optional[str] = None) -> dict:
     """
     3거래일 지난 pending 예측을 실제 주가와 대조해 채점.
     calibrate_predictions Celery 태스크(매일 02:00)에서 호출한다.
+
+    model_version 지정 시 해당 모델 예측만 채점 (백테스트 분리 조회용).
+    백테스트 레코드는 predicted_at이 이미 과거라 cutoff 조건 즉시 통과.
     """
     try:
         from models.db_models import PredictionLog
 
         cutoff = datetime.utcnow() - timedelta(days=3)
-        pending = (
-            db.query(PredictionLog)
-            .filter(
-                PredictionLog.status == "pending",
-                PredictionLog.predicted_at <= cutoff,
-            )
-            .all()
+        q = db.query(PredictionLog).filter(
+            PredictionLog.status == "pending",
+            PredictionLog.predicted_at <= cutoff,
         )
+        if model_version is not None:
+            q = q.filter(PredictionLog.model_version == model_version)
+        pending = q.all()
 
         scored = skipped = 0
         for p in pending:
@@ -122,19 +124,22 @@ def score_pending_predictions(db) -> dict:
 # Step C — 지표 집계
 # ─────────────────────────────────────────────────────────────────────────────
 
-def prediction_metrics(db) -> dict:
+def prediction_metrics(db, model_version: Optional[str] = None) -> dict:
     """
     Direction Accuracy + Calibration 집계.
     목표: direction_accuracy >= 0.6, high_confidence_accuracy > 전체 정확도.
+
+    model_version 지정 시 해당 버전만 집계 (백테스트 vs 라이브 분리).
     """
     try:
         from models.db_models import PredictionLog
 
-        rows = (
-            db.query(PredictionLog.is_correct, PredictionLog.confidence)
-            .filter(PredictionLog.status == "scored")
-            .all()
+        q = db.query(PredictionLog.is_correct, PredictionLog.confidence).filter(
+            PredictionLog.status == "scored"
         )
+        if model_version is not None:
+            q = q.filter(PredictionLog.model_version == model_version)
+        rows = q.all()
         n = len(rows)
         if n == 0:
             return {"n_scored": 0}

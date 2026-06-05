@@ -291,6 +291,81 @@ def get_price_history(ticker: str, days: int = 90) -> list[PricePoint]:
         return []
 
 
+def get_price_history_range(
+    ticker: str,
+    fromdate: str,
+    todate: Optional[str] = None,
+) -> list[PricePoint]:
+    """
+    임의 기간 주가 히스토리 조회 (소급 분석·성능 평가 전용, Redis 미사용).
+
+    pykrx ≥1.2.8 기준:
+      - adjusted=True(기본): Naver 소스 → KRX 2년 제한 없음, 상장 이후 전체 조회 가능
+      - adjusted=False: KRX 소스 → 내부 730일 청크 분할 + 1초 sleep 처리됨
+
+    fromdate / todate: YYYYMMDD 또는 YYYY-MM-DD 형식 모두 허용
+    """
+    if not PYKRX_AVAILABLE:
+        return []
+
+    end = (todate or _today()).replace("-", "")
+    start = fromdate.replace("-", "")
+
+    try:
+        df = pykrx_stock.get_market_ohlcv_by_date(
+            fromdate=start,
+            todate=end,
+            ticker=ticker,
+        )
+        if df is None or df.empty:
+            return []
+
+        return [
+            PricePoint(
+                date=str(date_idx)[:10],
+                close=float(row["종가"]),
+                volume=int(row["거래량"]),
+            )
+            for date_idx, row in df.iterrows()
+        ]
+
+    except Exception as e:
+        logger.warning(f"주가 히스토리(기간) 조회 실패 ({ticker}, {start}~{end}): {e}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# 특정 날짜 종가 (백테스트용)
+# ---------------------------------------------------------------------------
+
+def get_close_price_on(ticker: str, as_of) -> Optional[float]:
+    """
+    as_of 날짜의 종가를 반환한다. 휴장일이면 직전 거래일 종가로 대체.
+
+    as_of: datetime 또는 'YYYY-MM-DD' 문자열 모두 허용.
+    백테스트의 base_price 박제 목적으로 사용 — Redis 캐시 미사용.
+    """
+    if not PYKRX_AVAILABLE:
+        return None
+    try:
+        from datetime import timedelta as _td
+        if isinstance(as_of, str):
+            from datetime import datetime as _dt
+            as_of = _dt.strptime(as_of[:10], "%Y-%m-%d")
+        end_str = as_of.strftime("%Y%m%d")
+        # 7일 앞에서부터 조회해 직전 거래일 종가를 마지막 행으로 선택
+        start_str = (as_of - _td(days=7)).strftime("%Y%m%d")
+        df = pykrx_stock.get_market_ohlcv_by_date(
+            fromdate=start_str, todate=end_str, ticker=ticker
+        )
+        if df is None or df.empty:
+            return None
+        return float(df["종가"].iloc[-1])
+    except Exception as e:
+        logger.warning("get_close_price_on 실패 (%s, %s): %s", ticker, as_of, e)
+        return None
+
+
 # ---------------------------------------------------------------------------
 # 현재가
 # ---------------------------------------------------------------------------

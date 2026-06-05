@@ -160,6 +160,9 @@ class PredictionLog(Base):
     is_correct = Column(Boolean)                              # 방향 일치 여부 (사후)
     status = Column(String(10), default="pending")            # pending / scored / skipped
     evaluated_at = Column(DateTime)                           # 평가 시각
+    # 백테스트 전용 — look-ahead 검증용
+    base_price_date = Column(String(10))                      # base_close 기준 거래일 (YYYY-MM-DD)
+    latest_source_pubdate = Column(DateTime)                  # 입력 기사 중 가장 최신 pubDate
 
 
 class HallucinationLog(Base):
@@ -253,6 +256,8 @@ def run_migrations() -> None:
         ("prediction_log", "actual_change", "FLOAT"),
         ("prediction_log", "abnormal_return", "FLOAT"),
         ("prediction_log", "status", "VARCHAR(10) DEFAULT 'pending'"),
+        ("prediction_log", "base_price_date", "VARCHAR(10)"),
+        ("prediction_log", "latest_source_pubdate", "TIMESTAMP"),
         ("relation_cache", "source", "VARCHAR(20) DEFAULT 'correlation'"),
     ]
 

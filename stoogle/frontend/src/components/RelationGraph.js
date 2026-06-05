@@ -23,7 +23,13 @@ const styles = {
   svg: { width: '100%', cursor: 'grab' },
 };
 
-export default function RelationGraph({ data, centerId }) {
+const analyzingBox = {
+  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+  height: '320px', gap: '12px',
+  color: 'var(--color-text-muted)', fontSize: '13px', textAlign: 'center',
+};
+
+export default function RelationGraph({ data, centerId, isAnalyzing = false }) {
   const svgRef = useRef(null);
   const navigate = useNavigate();
   const W = 400;
@@ -109,16 +115,30 @@ export default function RelationGraph({ data, centerId }) {
     <div style={styles.card}>
       <div style={styles.header}>
         <span style={styles.title}>연관 기업 관계도</span>
-        <div style={styles.legend}>
-          {Object.entries(TYPE_COLORS).map(([type, color]) => (
-            <div key={type} style={styles.legendItem}>
-              <div style={{ ...styles.dot, background: color }} />
-              <span>{type}</span>
-            </div>
-          ))}
-        </div>
+        {!isAnalyzing && (
+          <div style={styles.legend}>
+            {Object.entries(TYPE_COLORS).map(([type, color]) => (
+              <div key={type} style={styles.legendItem}>
+                <div style={{ ...styles.dot, background: color }} />
+                <span>{type}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-      <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={styles.svg} />
+      {isAnalyzing ? (
+        <div style={analyzingBox}>
+          <span style={{ fontSize: '28px' }}>⏳</span>
+          <div>
+            <div style={{ fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '4px' }}>
+              과거 뉴스·공시를 분석 중입니다
+            </div>
+            <div>LLM이 비즈니스 관계를 발굴하고 있습니다.<br />잠시 후 새로고침하면 관계도를 확인할 수 있습니다.</div>
+          </div>
+        </div>
+      ) : (
+        <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} style={styles.svg} />
+      )}
     </div>
   );
 }

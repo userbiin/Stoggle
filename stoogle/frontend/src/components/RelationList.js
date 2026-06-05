@@ -67,15 +67,7 @@ const s = {
   },
 };
 
-const analyzing = {
-  display: 'flex', alignItems: 'center', gap: '8px',
-  background: '#f0eeff', border: '1px solid #d0c8f8',
-  borderRadius: '8px', padding: '10px 14px',
-  fontSize: '12px', color: 'var(--color-brand)',
-  marginBottom: '14px',
-};
-
-export default function RelationList({ companies = [], isAnalyzing = false }) {
+export default function RelationList({ companies = [] }) {
   const navigate = useNavigate();
 
   return (
@@ -83,17 +75,8 @@ export default function RelationList({ companies = [], isAnalyzing = false }) {
       <div style={s.header}>비즈니스 관계사</div>
       <div style={s.sub}>과거 뉴스·공시 소급 분석 기반 — 협력사 · 공급업체 · 경쟁사 등 실제 사업 관계 기업</div>
 
-      {isAnalyzing && (
-        <div style={analyzing}>
-          <span>⏳</span>
-          <span>LLM이 과거 뉴스·공시를 분석 중입니다. 잠시 후 새로고침하면 결과를 확인할 수 있습니다.</span>
-        </div>
-      )}
-
       {companies.length === 0 ? (
-        <div style={s.empty}>
-          {isAnalyzing ? '분석 완료 후 관계사 목록이 표시됩니다.' : '관계사 정보가 없습니다.'}
-        </div>
+        <div style={s.empty}>관계사 정보가 없습니다.</div>
       ) : (
         companies.map((c) => {
           const typeStyle = TYPE_STYLE[c.relation_type] || DEFAULT_TYPE;

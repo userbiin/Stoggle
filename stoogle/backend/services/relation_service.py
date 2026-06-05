@@ -35,11 +35,24 @@ def _get_name(ticker: str, registry: dict) -> str:
     return registry.get(ticker, {}).get("name", ticker)
 
 
-def _fetch_close_series(ticker: str, days: int = 90) -> dict[str, float]:
+def _fetch_close_series(
+    ticker: str,
+    days: int = 90,
+    fromdate: Optional[str] = None,
+    todate: Optional[str] = None,
+) -> dict[str, float]:
+    """
+    종가 시계열을 반환한다.
+    fromdate/todate 가 주어지면 해당 기간으로 조회 (소급 분석용).
+    그 외엔 오늘 기준 최근 days일을 사용한다.
+    """
     try:
-        from services.stock_service import get_price_history
-
-        history = get_price_history(ticker, days=days)
+        if fromdate:
+            from services.stock_service import get_price_history_range
+            history = get_price_history_range(ticker, fromdate=fromdate, todate=todate)
+        else:
+            from services.stock_service import get_price_history
+            history = get_price_history(ticker, days=days)
         return {
             point.date: float(point.close)
             for point in history
@@ -470,23 +483,30 @@ def _get_neighbors_from_edges(
         return []
 
 
-def compute_correlations_only(ticker: str) -> int:
+def compute_correlations_only(
+    ticker: str,
+    fromdate: Optional[str] = None,
+    todate: Optional[str] = None,
+) -> int:
     """
     단일 종목에 대해 KOSPI200 후보 종목들과의 상관계수를 계산하고
     RelationCache에 저장(발굴 관계를 덮어쓰지 않음)한다.
     상관계수는 관계 유형 분류에 사용하지 않으며 weight 보강 목적으로만 저장한다.
+
+    fromdate/todate: 소급 분석 시 임의 기간 지정 (YYYYMMDD 또는 YYYY-MM-DD).
+                    미지정 시 최근 90일 기준.
     반환값: 저장된 상관계수 수
     """
     from services.kospi200 import KOSPI200_TICKERS
 
     candidate_tickers = [t for t in KOSPI200_TICKERS if t != ticker]
-    base_series = _fetch_close_series(ticker)
+    base_series = _fetch_close_series(ticker, fromdate=fromdate, todate=todate)
     if not base_series:
         return 0
 
     computed = []
     for cand in candidate_tickers:
-        cand_series = _fetch_close_series(cand)
+        cand_series = _fetch_close_series(cand, fromdate=fromdate, todate=todate)
         corr = _pearson_corr(base_series, cand_series)
         if corr is not None:
             corr = round(corr, 2)

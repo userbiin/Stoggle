@@ -77,21 +77,18 @@ def _direction(base: float, actual: float) -> str:
 
 def _fetch_close_on_date(ticker: str, date_str: str) -> Optional[float]:
     """
-    특정 날짜의 종가를 pykrx에서 조회한다.
+    특정 날짜의 종가를 조회한다.
     date_str: YYYY-MM-DD
+    휴장일이면 전후 5일 범위로 조회 후 가장 가까운 날짜 선택.
     """
     try:
-        from pykrx import stock as pykrx_stock
+        from services.stock_service import get_price_history_range
 
-        yyyymmdd = date_str.replace("-", "")
-        # 혹시 휴장일이면 전후 5일 범위로 조회 후 가장 가까운 날짜 선택
-        from_dt = (datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=5)).strftime("%Y%m%d")
-        df = pykrx_stock.get_market_ohlcv_by_date(
-            fromdate=from_dt, todate=yyyymmdd, ticker=ticker
-        )
-        if df is None or df.empty:
+        from_dt = (datetime.strptime(date_str, "%Y-%m-%d") - timedelta(days=5)).strftime("%Y-%m-%d")
+        history = get_price_history_range(ticker, fromdate=from_dt, todate=date_str)
+        if not history:
             return None
-        return float(df.iloc[-1]["종가"])
+        return float(history[-1].close)
     except Exception as e:
         logger.warning("종가 조회 실패 [%s %s]: %s", ticker, date_str, e)
         return None
