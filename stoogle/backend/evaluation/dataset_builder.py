@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import random
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,6 @@ def get_trading_days(fromdate: str, todate: str) -> list[str]:
         logger.warning("거래일 조회 실패, 주말 제외 날짜 사용: %s", e)
 
     # fallback: 주말 제외
-    from datetime import timedelta
     start = datetime.strptime(fromdate, "%Y%m%d")
     end = datetime.strptime(todate, "%Y%m%d")
     days = []
@@ -72,15 +71,18 @@ def build_dataset(
     end: str = "20260430",
     n_samples: int = 300,
     seed: int = 42,
+    safety_days: int = 5,
 ) -> list[dict]:
     """
     과거 기간에서 (ticker, as_of) 트리플을 n_samples개 무작위 추출.
 
     Parameters
     ----------
-    start, end : YYYYMMDD 형식
-    n_samples  : 추출 수
-    seed       : 재현성용 랜덤 시드
+    start, end   : YYYYMMDD 형식
+    n_samples    : 추출 수
+    seed         : 재현성용 랜덤 시드
+    safety_days  : as_of <= today - safety_days 강제 (D+3 즉시 채점 보장).
+                   0이면 제약 없음 (라이브/대기 모드).
 
     Returns
     -------
@@ -95,9 +97,25 @@ def build_dataset(
     if not trading_days:
         raise RuntimeError(f"거래일 목록이 없습니다 ({start}~{end}).")
 
+    # 즉시 채점 가능 날짜만 필터 (D+3가 이미 경과한 것만)
+    if safety_days > 0:
+        cutoff = date.today() - timedelta(days=safety_days)
+        trading_days = [
+            d for d in trading_days
+            if datetime.strptime(d, "%Y-%m-%d").date() <= cutoff
+        ]
+        if len(trading_days) < 3:
+            raise ValueError(
+                f"채점 가능 거래일 부족: {len(trading_days)}일 "
+                f"(cutoff={cutoff}, safety_days={safety_days}). "
+                f"--start/--end를 더 옛날로 옮기거나, "
+                f"--safety_days=0으로 제약 해제하거나, "
+                f"뉴스 풀을 더 깊이 적재한 후 재시도."
+            )
+
     logger.info(
-        "데이터셋 빌드 시작: 종목 %d개 × %d 거래일 → %d 샘플 추출",
-        len(tickers), len(trading_days), n_samples,
+        "데이터셋 빌드 시작: 종목 %d개 × %d 거래일 → %d 샘플 추출 (safety_days=%d)",
+        len(tickers), len(trading_days), n_samples, safety_days,
     )
 
     seen: set[tuple] = set()
@@ -119,9 +137,68 @@ def build_dataset(
         if key in seen:
             continue
         seen.add(key)
-        # 장 마감 후(18:00) 기준 — 당일 종가 + 당일 뉴스까지 포함
-        as_of = datetime.strptime(day_str, "%Y-%m-%d").replace(hour=18, minute=0, second=0)
+        # 장 시작 직전(09:00) 기준 — safety_days가 D+3 경과를 보장
+        as_of = datetime.strptime(day_str, "%Y-%m-%d").replace(hour=9, minute=0, second=0)
         samples.append({"ticker": ticker, "as_of": as_of, "date_str": day_str})
 
     logger.info("데이터셋 빌드 완료: %d 샘플 (시도 %d회)", len(samples), attempts)
     return samples
+
+# evaluation/dataset_builder.py — 추가 함수
+def build_dataset_from_db(
+    start: str,           # YYYY-MM-DD
+    end: str,             # YYYY-MM-DD
+    n_samples: int = 300,
+    seed: int = 42,
+    safety_days: int = 3,
+) -> list[dict]:
+    """
+    DB의 NewsCache에 실제 뉴스가 있는 (ticker, date) 페어에서만 추출.
+    fallback 매칭 실패로 인한 no_news skip을 원천 제거.
+    """
+    import random
+    from datetime import date, datetime, timedelta
+    from sqlalchemy import func
+    from models.db_models import NewsCache, SessionLocal
+
+    random.seed(seed)
+    start_iso = f"{start}T00:00:00"
+    end_iso = f"{end}T23:59:59"
+    cutoff = date.today() - timedelta(days=safety_days)
+
+    db = SessionLocal()
+    try:
+        # 실제로 데이터가 있는 (ticker, 날짜) 페어만
+        rows = (
+            db.query(
+                NewsCache.ticker,
+                func.substr(NewsCache.published_at, 1, 10).label("d"),
+            )
+            .filter(NewsCache.published_at >= start_iso)
+            .filter(NewsCache.published_at <= end_iso)
+            .group_by(NewsCache.ticker, "d")
+            .all()
+        )
+    finally:
+        db.close()
+
+    # safety_days 적용
+    eligible = [
+        (t, d) for t, d in rows
+        if datetime.strptime(d, "%Y-%m-%d").date() <= cutoff
+    ]
+    if not eligible:
+        raise ValueError(
+            f"채점 가능 (ticker, date) 페어 0개 (cutoff={cutoff}). "
+            f"safety_days를 줄이거나 뉴스 풀 적재 필요."
+        )
+
+    # 부족하면 가용분 전체, 충분하면 무작위 추출
+    take = min(n_samples, len(eligible))
+    sampled = random.sample(eligible, take)
+
+    return [{
+        "ticker": t,
+        "as_of": datetime.strptime(d, "%Y-%m-%d").replace(hour=9),
+        "date_str": d,
+    } for t, d in sampled]

@@ -47,14 +47,15 @@ def show_summary(model_version: str) -> None:
         print(f"  pending (미채점):   {pending}건")
         print(f"  scored  (채점 완):  {scored}건")
         print(f"  skipped (데이터無): {skipped}건")
-        print(f"\n[정확도]")
-        print(f"  Direction Accuracy:        {acc:.3f}  ({sum(1 for r in rows if r.is_correct)}/{n})")
-        print(f"  High-conf Accuracy (≥0.7): {high_acc:.3f}  ({sum(1 for r in high if r.is_correct)}/{len(high)})")
-        print(f"  목표: direction_accuracy ≥ 0.600")
-        if acc >= 0.6:
+        from evaluation.prediction_scorer import MAGNITUDE_THRESHOLD
+        print(f"\n[적중률]")
+        print(f"  Magnitude Hit Rate (|Δ|≥{MAGNITUDE_THRESHOLD:.0%}): {acc:.3f}  ({sum(1 for r in rows if r.is_correct)}/{n})")
+        print(f"  High-conf Hit Rate (≥0.7):                  {high_acc:.3f}  ({sum(1 for r in high if r.is_correct)}/{len(high)})")
+        print(f"  목표: magnitude_hit_rate ≥ 0.500")
+        if acc >= 0.5:
             print(f"  판정: PASS")
         else:
-            print(f"  판정: FAIL (부족분 {0.6 - acc:.3f})")
+            print(f"  판정: FAIL (부족분 {0.5 - acc:.3f})")
     finally:
         db.close()
 

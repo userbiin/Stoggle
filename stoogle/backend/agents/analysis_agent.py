@@ -298,6 +298,7 @@ async def run(
     ticker: str,
     dart_context: str = "",
     relation_context: str = "",
+    use_rag: bool = True,
 ) -> Optional[AnalysisResult]:
     """
     기사 + 컨텍스트를 GPT-4o structured output 1회 호출로 통합 분석.
@@ -308,6 +309,8 @@ async def run(
     ticker           : 종목 코드
     dart_context     : DART RAG 텍스트 (빈 문자열이면 DartAnalysis DB 자동 조회)
     relation_context : 관계 기업 RAG 텍스트 (빈 문자열이면 RelationCache DB 자동 조회)
+    use_rag          : pgvector 유사 기사 RAG 사용 여부.
+                       False이면 similar_ctx="" (백테스트 v1 — 시점 필터 미구현으로 OFF)
 
     Returns
     -------
@@ -329,7 +332,9 @@ async def run(
         relation_context = _build_relation_context(ticker)
 
     # pgvector 유사 기사 보강 + 과거 예측 정확도
-    similar_ctx = await _retrieve_similar_news_context(articles)
+    # use_rag=False(백테스트 v1): 시점 필터 미구현이라 look-ahead 방지를 위해 OFF
+    # use_rag=True (라이브/백테스트 v2): evaluation/rag_filter.search_rag_at 로 교체 예정
+    similar_ctx = await _retrieve_similar_news_context(articles) if use_rag else ""
     accuracy_ctx = _build_accuracy_context(ticker)
 
     # 프롬프트 조립

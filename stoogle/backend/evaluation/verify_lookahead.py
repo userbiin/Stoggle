@@ -53,7 +53,7 @@ def verify(model_version: str = "backtest_v1") -> list[dict]:
                     "type": "latest_source_pubdate",
                     "pred_at": as_of,
                     "leak_dt": p.latest_source_pubdate,
-                    "detail": f"기사 fetched_at({p.latest_source_pubdate}) >= predicted_at({as_of})",
+                    "detail": f"입력 기사 최신 published_at({p.latest_source_pubdate}) >= predicted_at({as_of})",
                 })
 
             # 2) base_price_date 누출 검증 (date 비교)
@@ -72,26 +72,26 @@ def verify(model_version: str = "backtest_v1") -> list[dict]:
                 except ValueError:
                     pass
 
-            # 3) NewsCache 연결 기사 시점 검증 (source_ticker 기준)
+            # 3) NewsCache published_at 기반 시점 검증 (source_ticker 기준)
+            # published_at(VARCHAR ISO)이 as_of 이후인 기사가 DB에 존재하는지 확인.
+            # _fetch_news_before가 published_at < as_of 로 필터하므로 경고 수준.
             if p.source_ticker:
+                as_of_str = as_of.strftime("%Y-%m-%dT%H:%M:%S")
                 future_news = (
                     db.query(NewsCache)
                     .filter(
                         NewsCache.ticker == p.source_ticker,
-                        NewsCache.fetched_at >= as_of,
+                        NewsCache.published_at >= as_of_str,
                     )
                     .limit(1)
                     .first()
                 )
-                # 이 검사는 DB에 미래 기사가 남아있는지 확인하는 것이므로
-                # "현재 DB 상태"가 백테스트 시점에 실제로 있었던 것보다 많을 수 있다.
-                # 경고 수준으로만 기록 (확정 누출이 아님).
                 if future_news:
                     leaks.append({
                         "pred_id": p.id,
                         "type": "news_in_db_after_asof (warning)",
                         "pred_at": as_of,
-                        "leak_dt": future_news.fetched_at,
+                        "leak_dt": future_news.published_at,
                         "detail": (
                             f"DB에 as_of 이후 기사가 존재 — 백테스트 실행 시 필터링됐어야 함 "
                             f"(제목: {future_news.title[:60]})"

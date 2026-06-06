@@ -2,15 +2,18 @@
 백테스트 메인 실행 스크립트
 
 흐름:
-  1. (ticker, as_of) 데이터셋 빌드 (KOSPI50 × 과거 기간 무작위 추출)
+  1. (ticker, as_of) 데이터셋 빌드
+     --from_db: NewsCache에 실제 존재하는 (ticker, date) 페어에서만 추출 (no_news skip 최소화)
+     기본: KOSPI50 fallback × 거래일 무작위
   2. 각 샘플에 대해 run_analysis_at() — 5개 소스 시점 격리 예측 생성
   3. 즉시 채점 — D+3가 이미 지난 과거 데이터이므로 한 번에 전부 채점
   4. /api/v1/_internal/prediction-metrics?model_version=backtest_v1 로 확인
 
 실행 예시:
     cd backend/
-    python scripts/run_backtest.py --n_samples 20 --start 20260301 --end 20260430
-    python scripts/run_backtest.py --n_samples 300 --model_version backtest_v2
+    python scripts/run_backtest.py --from_db --start 20260520 --end 20260602 --safety_days 3 --n_samples 50
+    python scripts/run_backtest.py --n_samples 30 --start 20260522 --end 20260530
+    python scripts/run_backtest.py --n_samples 300 --model_version backtest_v2 --safety_days 0
 """
 from __future__ import annotations
 
@@ -20,6 +23,7 @@ import logging
 import os
 import sys
 import time
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
@@ -39,14 +43,31 @@ async def run(
     model_version: str,
     seed: int,
     concurrency: int,
+    safety_days: int = 5,
+    from_db: bool = False,
 ) -> None:
-    from evaluation.dataset_builder import build_dataset
+    from evaluation.dataset_builder import build_dataset, build_dataset_from_db
     from evaluation.backtest import run_analysis_at
     from evaluation.prediction_scorer import score_pending_predictions
     from models.db_models import SessionLocal
 
-    samples = build_dataset(start=start, end=end, n_samples=n_samples, seed=seed)
-    logger.info("데이터셋: %d 샘플 (%s ~ %s, seed=%d)", len(samples), start, end, seed)
+    if from_db:
+        start_iso = datetime.strptime(start, "%Y%m%d").strftime("%Y-%m-%d")
+        end_iso = datetime.strptime(end, "%Y%m%d").strftime("%Y-%m-%d")
+        samples = build_dataset_from_db(
+            start=start_iso, end=end_iso,
+            n_samples=n_samples, seed=seed, safety_days=safety_days,
+        )
+    else:
+        samples = build_dataset(
+            start=start, end=end,
+            n_samples=n_samples, seed=seed, safety_days=safety_days,
+        )
+
+    logger.info(
+        "데이터셋: %d 샘플 (%s ~ %s, seed=%d, safety_days=%d, from_db=%s)",
+        len(samples), start, end, seed, safety_days, from_db,
+    )
 
     db = SessionLocal()
     ok = skipped = errors = 0
@@ -71,7 +92,10 @@ async def run(
                     )
             except Exception as e:
                 errors += 1
-                logger.warning("[%d/%d] ERROR %s@%s: %s", i + 1, len(samples), s["ticker"], s["as_of"], e)
+                logger.warning(
+                    "[%d/%d] ERROR %s@%s: %s",
+                    i + 1, len(samples), s["ticker"], s["as_of"], e,
+                )
 
     tasks = [_run_one(i, s) for i, s in enumerate(samples)]
     await asyncio.gather(*tasks)
@@ -82,7 +106,6 @@ async def run(
         ok, skipped, errors, elapsed,
     )
 
-    # 즉시 채점 (D+3가 이미 지난 과거 레코드)
     logger.info("채점 시작 (model_version=%s)...", model_version)
     scored_result = score_pending_predictions(db, model_version=model_version)
     db.close()
@@ -98,21 +121,28 @@ async def run(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Stoogle 백테스트 실행")
-    parser.add_argument("--start", default="20260301", help="시작 날짜 YYYYMMDD")
-    parser.add_argument("--end", default="20260430", help="종료 날짜 YYYYMMDD")
-    parser.add_argument("--n_samples", type=int, default=50, help="샘플 수 (기본 50)")
-    parser.add_argument("--model_version", default="backtest_v1", help="모델 버전 식별자")
-    parser.add_argument("--seed", type=int, default=42, help="랜덤 시드")
-    parser.add_argument("--concurrency", type=int, default=3, help="동시 LLM 호출 수 (기본 3)")
+    parser.add_argument("--start", default="20260301")
+    parser.add_argument("--end", default="20260430")
+    parser.add_argument("--n_samples", type=int, default=50)
+    parser.add_argument("--model_version", default="backtest_v1")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--concurrency", type=int, default=3)
+    parser.add_argument(
+        "--safety_days", type=int, default=5,
+        help="as_of <= today - safety_days 강제. 0이면 제약 없음. (기본 5)",
+    )
+    parser.add_argument(
+        "--from_db", action="store_true",
+        help="NewsCache에 실제 존재하는 (ticker, date) 페어에서만 추출. no_news skip 최소화.",
+    )
     args = parser.parse_args()
 
     asyncio.run(run(
-        start=args.start,
-        end=args.end,
-        n_samples=args.n_samples,
-        model_version=args.model_version,
-        seed=args.seed,
-        concurrency=args.concurrency,
+        start=args.start, end=args.end,
+        n_samples=args.n_samples, model_version=args.model_version,
+        seed=args.seed, concurrency=args.concurrency,
+        safety_days=args.safety_days,
+        from_db=args.from_db,
     ))
 
 

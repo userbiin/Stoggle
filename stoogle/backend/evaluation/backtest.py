@@ -1,11 +1,12 @@
 """
+backtest.py
 백테스트 시점 격리 예측 함수
 
 기존 analysis_agent.run()을 호출하되, 5개 데이터 소스 모두에 as_of 필터를 적용한다.
 
 시점 격리 현황:
   [완전 차단] 뉴스       — NewsCache.fetched_at < as_of
-  [완전 차단] DART 공시  — DartChunk.indexed_at < as_of
+  [[완전 차단] DART 공시  — DartChunk.rcept_no 앞 8자리(YYYYMMDD) < as_of 날짜
   [완전 차단] base_price — as_of 거래일 종가 (pykrx 직접 조회)
   [완전 차단] 관계 컨텍스트 — RelationCache는 정적 사업 관계, 시점 필터 불필요
   [알려진 한계] pgvector 유사 기사 검색 — analysis_agent 내부에서 시점 필터 없이 조회됨
@@ -21,6 +22,10 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# v1: pgvector RAG 시점 필터 미구현 → look-ahead 방지를 위해 OFF
+# v2: evaluation/rag_filter.search_rag_at 로 교체 후 True로 전환
+USE_RAG = False
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 내부 유틸
@@ -28,9 +33,12 @@ logger = logging.getLogger(__name__)
 
 def _fetch_news_before(ticker: str, as_of: datetime, limit: int = 30) -> list:
     """
-    NewsCache에서 as_of 이전에 fetch된 기사를 반환한다.
-    fetched_at < as_of 로 필터링 — 미래 기사 완전 차단.
+    NewsCache에서 as_of 이전에 발행된 기사를 반환한다.
+    published_at(VARCHAR ISO) < as_of 로 필터링 — 미래 기사 완전 차단.
+    fetched_at 대신 published_at 사용: fetched_at은 수집 시각(look-ahead 누출 가능),
+    published_at은 실제 발행 시각이라 시점 격리에 올바른 기준.
     """
+    as_of_str = as_of.strftime("%Y-%m-%dT%H:%M:%S")
     try:
         from models.db_models import NewsCache, SessionLocal
         db = SessionLocal()
@@ -39,9 +47,9 @@ def _fetch_news_before(ticker: str, as_of: datetime, limit: int = 30) -> list:
                 db.query(NewsCache)
                 .filter(
                     NewsCache.ticker == ticker,
-                    NewsCache.fetched_at < as_of,
+                    NewsCache.published_at < as_of_str,
                 )
-                .order_by(NewsCache.fetched_at.desc())
+                .order_by(NewsCache.published_at.desc())
                 .limit(limit)
                 .all()
             )
@@ -55,25 +63,30 @@ def _fetch_news_before(ticker: str, as_of: datetime, limit: int = 30) -> list:
 
 def _get_dart_context_before(ticker: str, as_of: datetime, max_chunks: int = 8) -> str:
     """
-    DartChunk에서 as_of 이전에 색인된 청크를 공급망 키워드 기준으로 가져온다.
+    DartChunk에서 as_of 이전 공시 청크를 공급망 키워드 기준으로 가져온다.
     pgvector 미사용 환경에서는 빈 문자열 반환.
+
+    시점 필터: rcept_no 앞 8자리(YYYYMMDD)를 as_of 날짜와 비교.
+    DartChunk에 rcept_dt 컬럼이 없으므로 rcept_no substring으로 대체.
+    indexed_at은 색인 시각(≥ 실제 공시일)이라 look-ahead 가능성 있어 사용 안 함.
     """
     try:
         from models.db_models import DartChunk, SessionLocal, PGVECTOR_AVAILABLE
         if not PGVECTOR_AVAILABLE or DartChunk is None:
             return ""
-        from sqlalchemy import or_
+        from sqlalchemy import or_, func
         _KEYWORDS = ["거래처", "협력사", "납품", "공급", "유통", "계열사", "고객사", "매출처"]
+        as_of_date_str = as_of.strftime("%Y%m%d")
         db = SessionLocal()
         try:
             rows = (
                 db.query(DartChunk)
                 .filter(
                     DartChunk.ticker == ticker,
-                    DartChunk.indexed_at < as_of,
+                    func.substr(DartChunk.rcept_no, 1, 8) < as_of_date_str,
                     or_(*[DartChunk.section_title.ilike(f"%{kw}%") for kw in _KEYWORDS]),
                 )
-                .order_by(DartChunk.indexed_at.desc())
+                .order_by(func.substr(DartChunk.rcept_no, 1, 8).desc())
                 .limit(max_chunks)
                 .all()
             )
@@ -189,7 +202,7 @@ async def run_analysis_at(
     if not api_key:
         return {"status": "no_api_key", "ticker": ticker, "as_of": str(as_of)}
 
-    # 1) 뉴스: fetched_at < as_of 필터
+    # 1) 뉴스: published_at < as_of 필터 (fetched_at 아님 — 수집 시각은 look-ahead 오염 가능)
     news_rows = _fetch_news_before(ticker, as_of, limit=30)
     if not news_rows:
         return {"status": "no_news", "ticker": ticker, "as_of": str(as_of)}
@@ -205,18 +218,24 @@ async def run_analysis_at(
         if row.title
     ]
 
-    # 가장 최신 기사 pubDate (누출 검증용)
+    # 가장 최신 기사 발행일 (누출 검증용 — published_at 기준)
     latest_pubdate: Optional[datetime] = None
     for row in news_rows:
-        if row.fetched_at and (latest_pubdate is None or row.fetched_at > latest_pubdate):
-            latest_pubdate = row.fetched_at
+        if not row.published_at:
+            continue
+        try:
+            pub_dt = datetime.fromisoformat(row.published_at)
+        except (ValueError, TypeError):
+            continue
+        if latest_pubdate is None or pub_dt > latest_pubdate:
+            latest_pubdate = pub_dt
 
     # 2) DART: indexed_at < as_of 필터
     dart_context = _get_dart_context_before(ticker, as_of)
 
     # 3) 분석 에이전트 호출 (relation_context는 auto-fetch — 정적 사업 관계라 시점 무관)
     #    주의: 내부 pgvector 유사 기사 검색은 시점 미필터 (알려진 한계, v2 개선 예정)
-    result = await agent_run(articles, ticker, dart_context=dart_context)
+    result = await agent_run(articles, ticker, dart_context=dart_context, use_rag=USE_RAG)
 
     if result is None or not result.impacts:
         return {"status": "no_impacts", "ticker": ticker, "as_of": str(as_of)}
