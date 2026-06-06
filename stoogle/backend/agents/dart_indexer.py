@@ -333,12 +333,15 @@ async def _embed_batch(texts: list[str]) -> list[list[float]]:
     if not api_key:
         return []
 
+    import asyncio as _asyncio
     import voyageai
     client = voyageai.AsyncClient(api_key=api_key)
 
     embeddings: list[list[float]] = []
     for i in range(0, len(texts), EMBED_BATCH_SIZE):
         batch = texts[i : i + EMBED_BATCH_SIZE]
+        if i > 0:
+            await _asyncio.sleep(21)   # 무료 3 RPM → 배치 간 21초 대기
         result = await client.embed(batch, model=EMBED_MODEL)
         embeddings.extend(result.embeddings)
     return embeddings

@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 
 EMBED_MODEL = "voyage-3"
 EMBED_DIM = 1024
-COSINE_DIST_THRESHOLD = 0.3   # 1 - 0.9 = 0.1 (유사도 0.9 이상 → 중복)
+DEDUP_SIM_THRESHOLD = 0.82     # 배치 내 코사인 유사도 임계값 (패러프레이즈 쌍 실측 0.85 기준)
+COSINE_DIST_THRESHOLD = 0.18   # pgvector cosine_distance 임계값 (= 1 - 0.82)
 EMBED_BATCH_SIZE = 32          # Voyage AI 배치 한도 (128 최대, 안전하게 32 사용)
 
 
@@ -43,12 +44,15 @@ async def _embed_batch(texts: list[str]) -> list[list[float]]:
     if not api_key:
         return []
 
+    import asyncio as _asyncio
     import voyageai
     client = voyageai.AsyncClient(api_key=api_key)
 
     embeddings: list[list[float]] = []
     for i in range(0, len(texts), EMBED_BATCH_SIZE):
         batch = texts[i : i + EMBED_BATCH_SIZE]
+        if i > 0:
+            await _asyncio.sleep(21)   # 무료 3 RPM → 배치 간 21초 대기
         result = await client.embed(batch, model=EMBED_MODEL)
         embeddings.extend(result.embeddings)
     return embeddings
@@ -70,7 +74,7 @@ def _dedup_within_batch(
     unique: list[tuple[Article, list[float]]] = []
 
     for article, emb in zip(articles, embeddings):
-        if any(_cosine_sim(emb, u_emb) >= 0.9 for _, u_emb in unique):
+        if any(_cosine_sim(emb, u_emb) >= DEDUP_SIM_THRESHOLD for _, u_emb in unique):
             logger.debug("배치 내 중복 제거: %.60s", article.title)
             continue
         unique.append((article, emb))
