@@ -71,6 +71,8 @@ class Article:
 class ScoredArticle:
     article: Article
     score: int
+    direction: str = "중립"
+    reason: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -342,45 +344,71 @@ async def map_articles_to_tickers(articles: list[Article]) -> dict[str, list[Art
 # 3단계: Ollama 개별 점수
 # ---------------------------------------------------------------------------
 
+_SCORE_SYSTEM = (
+    "너는 한국 주식시장 애널리스트다.\n"
+    "주어진 뉴스가 특정 종목의 '주가'에 미칠 영향을 0~5점으로 평가한다.\n\n"
+    "0=무관, 1=언급만/주가 무관, 2=간접·장기 영향, 3=영향 가능하나 불확실,\n"
+    "4=주가에 영향 줄 구체적 사건(실적·계약·규제·수급), 5=즉각적 강한 호재/악재\n\n"
+    '반드시 아래 JSON만 출력. 설명·코드블록 금지.\n'
+    '{"score":<0~5>,"direction":"상승|하락|중립","reason":"근거 한 문장"}'
+)
+
+_SCORE_FEWSHOT = [
+    {"role": "user", "content": "종목: 한미반도체\n뉴스: 미국이 대중 반도체 장비 수출 규제를 강화한다고 발표했다."},
+    {"role": "assistant", "content": '{"score":4,"direction":"하락","reason":"장비 수출 규제 강화는 반도체 장비사 매출에 직접 영향을 준다."}'},
+    {"role": "user", "content": "종목: 삼성전자\n뉴스: 삼성전자 사장이 사내 체육대회에 참석해 직원들을 격려했다."},
+    {"role": "assistant", "content": '{"score":1,"direction":"중립","reason":"사내 행사 참석은 주가와 무관한 동정 기사다."}'},
+]
+
+
+def _parse_score_json(raw: str) -> tuple[int, str, str]:
+    """JSON 응답 파싱 → (score, direction, reason). 실패 시 (0, '중립', '')."""
+    raw = raw.strip().replace("```json", "").replace("```", "")
+    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not m:
+        return (0, "중립", "")
+    try:
+        d = json.loads(m.group())
+        score = max(0, min(5, int(d.get("score", 0))))
+        direction = d.get("direction", "중립")
+        reason = d.get("reason", "")
+        return (score, direction, reason)
+    except (json.JSONDecodeError, ValueError):
+        return (0, "중립", "")
+
+
 @track_agent("relevance_agent", "news_pipeline")
 async def _score_with_ollama(
     ticker: str,
     company_name: str,
     article: Article,
-) -> int:
-    """Ollama EXAONE로 기사 관련도 점수 반환 (0~5). API 실패 시 0 반환."""
-    prompt = (
-        f"다음 기사가 {company_name}({ticker}) 종목과 얼마나 관련 있는지 평가하세요.\n\n"
-        f"제목: {article.title}\n"
-        f"요약: {article.summary or '없음'}\n\n"
-        "평가 기준:\n"
-        "5점: 해당 기업 직접 언급, 핵심 사업 관련\n"
-        "4점: 해당 기업 간접 관련, 동일 산업 주요 이슈\n"
-        "3점: 업종 전반 영향, 관련성 보통\n"
-        "2점: 거시경제 이슈, 간접 영향\n"
-        "1점: 관련성 낮음\n"
-        "0점: 전혀 무관\n\n"
-        "숫자 하나만 답하세요 (0~5)."
+) -> tuple[int, str, str]:
+    """Ollama로 기사 관련도 평가 → (score 0~5, direction, reason). 실패 시 (0, '중립', '')."""
+    user_msg = (
+        f"종목: {company_name}\n"
+        f"뉴스 제목: {article.title}\n"
+        f"뉴스 요약: {article.summary or '없음'}"
     )
+    messages = [
+        {"role": "system", "content": _SCORE_SYSTEM},
+        *_SCORE_FEWSHOT,
+        {"role": "user", "content": user_msg},
+    ]
 
     try:
         from openai import AsyncOpenAI
         client = AsyncOpenAI(api_key="ollama", base_url=_OLLAMA_BASE_URL)
         response = await client.chat.completions.create(
             model=_OLLAMA_MODEL,
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             temperature=0.0,
-            max_tokens=5,
+            max_tokens=100,
         )
         raw = response.choices[0].message.content.strip()
-        match = re.search(r"[0-5]", raw)
-        if not match:
-            logger.warning("Ollama 응답 파싱 실패: %r", raw)
-            return 0
-        return int(match.group())
+        return _parse_score_json(raw)
     except Exception as e:
-        logger.error("Ollama API 호출 실패 [%s]: %s", article.url, e)
-        return 0
+        logger.error("Ollama 채점 실패 [%s]: %s", article.url, e)
+        return (0, "중립", "")
 
 
 async def _score_with_semaphore(
@@ -388,10 +416,10 @@ async def _score_with_semaphore(
     ticker: str,
     company_name: str,
     article: Article,
-) -> tuple[Article, int]:
+) -> tuple[Article, int, str, str]:
     async with sem:
-        score = await _score_with_ollama(ticker, company_name, article)
-        return (article, score)
+        score, direction, reason = await _score_with_ollama(ticker, company_name, article)
+        return (article, score, direction, reason)
 
 
 # ---------------------------------------------------------------------------
@@ -418,8 +446,8 @@ async def run(
     scored_pairs = await asyncio.gather(*tasks)
 
     results = [
-        ScoredArticle(article=article, score=score)
-        for article, score in scored_pairs
+        ScoredArticle(article=article, score=score, direction=direction, reason=reason)
+        for article, score, direction, reason in scored_pairs
         if score >= _SCORE_THRESHOLD
     ]
     results.sort(key=lambda x: x.score, reverse=True)

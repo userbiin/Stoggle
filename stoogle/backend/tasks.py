@@ -579,49 +579,91 @@ def crawl_all_news(self):
 @app.task(bind=True, max_retries=1, default_retry_delay=120)
 def run_exaone_news_pipeline(self):
     """
-    EXAONE 채점 기반 뉴스 파이프라인 (1시간 주기, :30 실행).
+    Ollama 3단 파이프라인 뉴스 수집 (1시간 주기, :30 실행).
 
-    RSS + 네이버 섹션 수집 → 본문 fetch → 종목 매칭 → EXAONE 채점 순으로 처리.
-    PASS_THRESHOLD(4점) 이상 기사만 해당 종목의 Redis 뉴스 캐시 선두에 삽입한다.
-    EXAONE_API_KEY 미설정 시 graceful skip.
+    RSS + 네이버 섹션 수집 → 본문 fetch → batch_filter → map_articles_to_tickers → run
+    4점 이상 기사만 해당 종목의 Redis 뉴스 캐시 선두에 삽입한다.
+    Ollama 미연결 시 graceful skip.
     """
-    import os
-    if not os.getenv("EXAONE_API_KEY"):
-        logger.info("EXAONE_API_KEY 미설정 — run_exaone_news_pipeline skip")
-        return {"status": "skipped", "reason": "no_api_key"}
+    import httpx as _httpx
 
-    from agents.naver_news_crawler import run_pipeline
+    _ollama_root = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    if _ollama_root.endswith("/v1"):
+        _ollama_root = _ollama_root[:-3]
+    try:
+        _httpx.get(f"{_ollama_root}/api/tags", timeout=5).raise_for_status()
+    except Exception as e:
+        logger.info("Ollama 미연결 — run_exaone_news_pipeline skip: %s", e)
+        return {"status": "skipped", "reason": "ollama_unreachable"}
+
+    from agents.news_sources import collect_candidates
+    from agents.naver_news_crawler import fetch_all_bodies
+    from agents.relevance_agent import (
+        Article as RelevArticle,
+        batch_filter,
+        map_articles_to_tickers,
+        run as relevance_run,
+    )
     from services.cache_service import get_news_cache, set_news_cache
 
+    async def _pipeline() -> list[tuple[str, object]]:
+        raw = await collect_candidates()
+        await fetch_all_bodies(raw)
+        logger.info("RSS/섹션 수집: %d건", len(raw))
+
+        articles = [
+            RelevArticle(
+                url=a["link"],
+                title=a["title"],
+                summary=(a.get("body") or a.get("description", ""))[:500],
+            )
+            for a in raw
+            if a.get("title") and a.get("link")
+        ]
+
+        filtered = await batch_filter(articles)
+        if not filtered:
+            return []
+
+        ticker_map = await map_articles_to_tickers(filtered)
+        if not ticker_map:
+            return []
+
+        results: list[tuple[str, object]] = []
+        for ticker, arts in ticker_map.items():
+            scored = await relevance_run(ticker, arts)
+            results.extend((ticker, s) for s in scored)
+        return results
+
     try:
-        articles = asyncio.run(run_pipeline())
+        pipeline_results = asyncio.run(_pipeline())
     except Exception as exc:
-        logger.warning("EXAONE 파이프라인 실패: %s", exc)
+        logger.warning("Ollama 파이프라인 실패: %s", exc)
         raise self.retry(exc=exc)
 
-    # 종목별로 그룹핑 후 기존 캐시에 prepend
-    by_ticker: dict[str, list[dict]] = {}
-    for a in articles:
-        by_ticker.setdefault(a["ticker"], []).append(a)
+    # 종목별 그룹핑 후 기존 캐시에 prepend
+    by_ticker: dict[str, list] = {}
+    for ticker, scored in pipeline_results:
+        by_ticker.setdefault(ticker, []).append(scored)
 
     direction_to_sentiment = {"상승": "positive", "하락": "negative", "중립": "neutral"}
     updated = {}
-    for ticker, items in by_ticker.items():
+    for ticker, scored_list in by_ticker.items():
         existing = get_news_cache(ticker) or []
         existing_urls = {e.get("url") for e in existing}
 
         new_items = []
-        for idx, a in enumerate(items):
-            if a["url"] in existing_urls:
+        for idx, s in enumerate(scored_list):
+            if s.article.url in existing_urls:
                 continue
             new_items.append({
-                "id": -(idx + 1),           # 음수 id로 EXAONE 기사임을 표시
-                "title": a["title"],
-                "source": "exaone",
+                "id": -(idx + 1),
+                "title": s.article.title,
+                "source": "ollama",
                 "published_at": "",
-                "url": a["url"],
-                "sentiment": direction_to_sentiment.get(a["direction"], "neutral"),
-                "summary": a["reason"],
+                "url": s.article.url,
+                "sentiment": direction_to_sentiment.get(s.direction, "neutral"),
+                "summary": s.reason,
                 "category": None,
             })
 
@@ -629,7 +671,7 @@ def run_exaone_news_pipeline(self):
             set_news_cache(ticker, new_items + existing)
             updated[ticker] = len(new_items)
 
-    logger.info("EXAONE 파이프라인 완료: %d건 → %d 종목 캐시 갱신", len(articles), len(updated))
+    logger.info("Ollama 파이프라인 완료: %d건 → %d 종목 캐시 갱신", len(pipeline_results), len(updated))
     return {"status": "ok", "inserted": updated}
 
 
