@@ -203,7 +203,7 @@ def build_ticker_registry() -> dict:
     registry: dict = {}
     today = _today()
 
-    for market in ("KOSPI", "KOSDAQ", "KONEX"):
+    for market in ("KOSPI",):
         try:
             tickers = _normalize_ticker_list(
                 pykrx_stock.get_market_ticker_list(today, market=market)
