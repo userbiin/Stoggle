@@ -111,3 +111,4 @@ class RelationsResponse(BaseModel):
     links: list[RelationLink]
     related_companies: list[RelatedCompany]
     impact: list[ImpactItem] = []
+    discovery_status: str = "ready"   # "ready" | "pending" — 프론트가 "발굴 중..." 표시에 사용

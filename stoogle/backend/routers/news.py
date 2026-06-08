@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query
 from models.schemas import NewsResponse
 from services.news_service import fetch_news, rank_news
+from services.stock_service import get_or_build_registry
 
 router = APIRouter(tags=["news"])
 
@@ -15,5 +16,7 @@ async def get_news(
     # Celery 태스크가 랭킹 완료된 결과를 캐시에 저장하므로,
     # 캐시 히트 시(sentiment가 이미 설정된 경우) 재분석 없이 그대로 반환한다.
     if all(i.sentiment == "neutral" for i in items):
-        items = await rank_news(items)
+        registry = get_or_build_registry()
+        company_name = registry.get(ticker, {}).get("name", ticker)
+        items = await rank_news(items, company_name=company_name)
     return NewsResponse(ticker=ticker, news=items)

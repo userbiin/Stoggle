@@ -164,54 +164,87 @@ def _categorize(title: str) -> str:
     return "일반"
 
 
-async def rank_news(items: list[NewsItem]) -> list[NewsItem]:
+_IRRELEVANT_TITLE_KEYWORDS = [
+    "마스터즈", "챔피언십", "티샷", "그린", "버디", "보기",
+    "골프", "축구", "야구", "농구", "리그", "우승", "시상식", "출전",
+    "콘서트", "팬미팅", "드라마", "영화", "예능",
+]
+
+
+def _is_irrelevant_title(title: str) -> bool:
+    return any(kw in title for kw in _IRRELEVANT_TITLE_KEYWORDS)
+
+
+async def rank_news(items: list[NewsItem], company_name: Optional[str] = None) -> list[NewsItem]:
     """
-    Claude로 감성 분석 + 시장 중요도 순 정렬.
-    ANTHROPIC_API_KEY 미설정 또는 호출 실패 시 키워드 기반 폴백.
+    Claude로 (1) 주가 관련성, (2) 시장 중요도, (3) 감성을 평가.
+    relevance <= 1 인 기사(스폰서 스포츠대회·행사·인물 동정 등)는 제거한다.
+    ANTHROPIC_API_KEY 미설정·호출 실패 시 키워드 폴백.
     """
     if not items:
         return items
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return _rank_by_heuristic(items)
+
     try:
         import anthropic
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            return _rank_by_heuristic(items)
 
+        subject = f"'{company_name}' 종목" if company_name else "해당 종목"
         titles = "\n".join(f"{i + 1}. {item.title}" for i, item in enumerate(items))
         client = anthropic.AsyncAnthropic(api_key=api_key)
         msg = await client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=512,
+            max_tokens=700,
             messages=[{"role": "user", "content": (
-                "한국 주식 뉴스 제목들의 감성과 시장 중요도를 분석하세요.\n\n"
+                f"당신은 한국 주식 애널리스트입니다. 아래 뉴스 제목이 {subject}의 '주가'에 "
+                "미칠 영향을 평가하세요.\n"
+                "- relevance(0~5): 주가 영향 가능성. 기업명이 들어가도 스폰서 스포츠 대회·행사·"
+                "시상식·인물 동정 등 주가와 무관하면 0~1점.\n"
+                "- importance(0~10): 시장 중요도(실적·계약·규제·수급 등일수록 높음).\n"
+                "- sentiment: positive | negative | neutral.\n\n"
                 f"{titles}\n\n"
-                "반드시 JSON 배열로만 응답하세요 (다른 텍스트 없이):\n"
-                '[{"index": 1, "sentiment": "positive", "score": 8}, ...]'
+                "반드시 JSON 배열로만 응답(다른 텍스트 금지):\n"
+                '[{"index": 1, "sentiment": "positive", "relevance": 4, "importance": 8}, ...]'
             )}],
         )
         raw = msg.content[0].text.strip()
         if "```" in raw:
-            raw = raw.split("```")[1].lstrip("json").strip()
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip()
 
         analysis: list[dict] = json.loads(raw)
-        scores: dict[int, tuple[str, int]] = {
-            r["index"]: (r.get("sentiment", "neutral"), int(r.get("score", 5)))
+        meta: dict[int, tuple[str, int, int]] = {
+            r["index"]: (
+                r.get("sentiment", "neutral"),
+                int(r.get("relevance", 3)),
+                int(r.get("importance", 5)),
+            )
             for r in analysis
         }
-        ranked: list[tuple[int, NewsItem]] = []
+
+        ranked: list[tuple[int, int, NewsItem]] = []
         for i, item in enumerate(items, 1):
-            sentiment, score = scores.get(i, ("neutral", 5))
+            sentiment, relevance, importance = meta.get(i, ("neutral", 3, 5))
             item.sentiment = sentiment
-            ranked.append((score, item))
-        ranked.sort(key=lambda x: x[0], reverse=True)
-        return [item for _, item in ranked]
+            if relevance <= 1:
+                continue
+            ranked.append((relevance, importance, item))
+
+        ranked.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        return [item for _, _, item in ranked]
+
     except Exception as e:
         logger.warning("LLM 감성 분석 실패, 키워드 폴백: %s", e)
         return _rank_by_heuristic(items)
 
 
 def _rank_by_heuristic(items: list[NewsItem]) -> list[NewsItem]:
-    """키워드 기반 감성 분석 + 중요도 정렬 (rank_news 폴백)."""
+    """키워드 기반 감성 분석 + 중요도 정렬 (rank_news 폴백). 비금융 기사 1차 제거."""
+    items = [i for i in items if not _is_irrelevant_title(i.title)]
     positive_words = ["상승", "급등", "호실적", "흑자", "확정", "수혜", "개선", "달성", "돌파"]
     negative_words = ["하락", "급락", "부진", "적자", "우려", "리스크", "제재", "소송", "하향"]
 
