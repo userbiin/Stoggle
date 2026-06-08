@@ -1,15 +1,20 @@
-"""[3] 예측 정확도 채점 — 예측 저장(Step A) + D+3 대조 채점(Step B)
+"""[3] 예측 정확도 채점
 
-두 단계로 분리해 look-ahead를 원천 차단한다:
-  A. 예측 시점: save_prediction() → status='pending', base_price 박제
-  B. D+3 이후:  score_pending_predictions() → 실제 주가와 대조
+[프로젝트 평가 기준]
+  핵심 질문: "뉴스가 뜬 종목이 실제로 유의미하게 변동했는가?"
+  주지표: Magnitude Hit  — |actual_change| >= MAGNITUDE_THRESHOLD
+  부지표: Direction      — up/down 방향 일치 (참고용)
+
+is_correct = magnitude_hit (주지표)
+abnormal_return = 1.0(hit) / 0.0(miss) — 집계용
 """
 import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
 
 logger = logging.getLogger("stoogle.evaluation")
-MAGNITUDE_THRESHOLD = 0.02
+
+MAGNITUDE_THRESHOLD = 0.02  # ±2% 이상 변동 = 유의미한 변동
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -26,10 +31,6 @@ def save_prediction(
     news_id: Optional[int] = None,
     base_price: Optional[float] = None,
 ) -> None:
-    """
-    예측 시점 레코드를 status='pending'으로 저장한다.
-    base_price는 예측 시점 종가로 박제 — 채점 시 look-ahead 방지.
-    """
     try:
         from models.db_models import PredictionLog
 
@@ -73,10 +74,6 @@ def save_prediction(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def is_d3_passed(predicted_at: datetime, now: Optional[datetime] = None) -> bool:
-    """
-    predicted_at 이후 거래일 3일 이상 경과 여부.
-    pykrx 실패 또는 빈 응답 시 캘린더 기준(4일)으로 fallback.
-    """
     now = now or datetime.utcnow()
     try:
         from pykrx import stock
@@ -84,20 +81,24 @@ def is_d3_passed(predicted_at: datetime, now: Optional[datetime] = None) -> bool
             fromdate=predicted_at.strftime("%Y%m%d"),
             todate=now.strftime("%Y%m%d"),
         )
-        if biz:  # 빈 응답(KRX API 무응답) → fallback, 예외 없이 조용히 실패하는 경우
-            return len(biz) >= 4  # predicted_at 포함 4개 = D+3
+        if biz:
+            return len(biz) >= 4
     except Exception:
         pass
     return (now - predicted_at).days >= 4
 
 
-def score_pending_predictions(db, model_version: Optional[str] = None) -> dict:
+def score_pending_predictions(
+    db,
+    model_version: Optional[str] = None,
+    force_score_all: bool = False,
+) -> dict:
     """
-    3거래일 지난 pending 예측을 실제 주가와 대조해 채점.
-    calibrate_predictions Celery 태스크(매일 02:00)에서 호출한다.
+    D+3가 경과한 pending 예측을 실제 주가와 대조해 채점.
 
-    model_version 지정 시 해당 모델 예측만 채점 (백테스트 분리 조회용).
-    백테스트 레코드는 predicted_at이 이미 과거라 is_d3_passed 즉시 통과.
+    주지표: is_correct = magnitude_hit (|actual_change| >= MAGNITUDE_THRESHOLD)
+    부지표: abnormal_return = 1.0(hit) / 0.0(miss)  — 동일값, 집계용
+    참고:   actual_direction 컬럼에 실제 방향(up/down) 저장
     """
     try:
         from models.db_models import PredictionLog
@@ -109,8 +110,9 @@ def score_pending_predictions(db, model_version: Optional[str] = None) -> dict:
 
         scored = skipped = 0
         for p in pending:
-            if not is_d3_passed(p.predicted_at):
-                continue  # D+3 미경과 — 이번 채점 사이클에서 건너뜀
+            if not force_score_all and not is_d3_passed(p.predicted_at):
+                continue
+
             if not p.base_close or not p.prediction_date:
                 p.status = "skipped"
                 skipped += 1
@@ -122,20 +124,15 @@ def score_pending_predictions(db, model_version: Optional[str] = None) -> dict:
                 skipped += 1
                 continue
 
-            # 수정
             actual_change = (d3_price - p.base_close) / p.base_close
             p.actual_change = round(actual_change, 6)
             p.actual_close = d3_price
             p.actual_direction = "up" if actual_change > 0 else "down"
 
-            # 참고용 — 방향 일치 (별도 보존, 발표 자료에서 비교 가능)
-            direction_match = (p.direction == p.actual_direction)
-
-            # 메인 평가 — 변동 폭이 임계값 이상이면 "유의미한 변동" 적중
+            # 주지표: 변동 폭 (프로젝트 목적과 일치)
             magnitude_hit = abs(actual_change) >= MAGNITUDE_THRESHOLD
-
-            # is_correct 의미를 변동 적중으로 변경
             p.is_correct = magnitude_hit
+            p.abnormal_return = 1.0 if magnitude_hit else 0.0
 
             p.status = "scored"
             p.evaluated_at = datetime.utcnow()
@@ -148,27 +145,28 @@ def score_pending_predictions(db, model_version: Optional[str] = None) -> dict:
         return {"error": str(e)}
 
 
+def score_all_pending(db, model_version: Optional[str] = None) -> dict:
+    """백테스트 전용: D+3 체크 없이 전체 pending 즉시 채점."""
+    return score_pending_predictions(db, model_version=model_version, force_score_all=True)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Step C — 지표 집계
 # ─────────────────────────────────────────────────────────────────────────────
 
 def prediction_metrics(db, model_version: Optional[str] = None) -> dict:
     """
-    변동 적중률 + Calibration 집계.
-
-    정답 정의: |actual_change| >= MAGNITUDE_THRESHOLD (기본 ±2%)
-    → 예측한 영향 종목이 D+3 사이 의미 있는 폭으로 변동했는지
-    → 학계 event study의 "유의미한 abnormal return" 평가와 같은 계열
-
-    목표: magnitude_hit_rate >= 0.5 (시장 평균 변동률 대비 의미 있는 수준),
-        high_confidence_hit_rate > 전체 적중률 (calibration 검증).
+    주지표: magnitude_hit_rate  — |Δ| >= MAGNITUDE_THRESHOLD
+    calibration: high-confidence 예측의 hit_rate가 전체보다 높은지
     """
     try:
         from models.db_models import PredictionLog
 
-        q = db.query(PredictionLog.is_correct, PredictionLog.confidence).filter(
-            PredictionLog.status == "scored"
-        )
+        q = db.query(
+            PredictionLog.is_correct,
+            PredictionLog.confidence,
+            PredictionLog.abnormal_return,
+        ).filter(PredictionLog.status == "scored")
         if model_version is not None:
             q = q.filter(PredictionLog.model_version == model_version)
         rows = q.all()
@@ -176,16 +174,19 @@ def prediction_metrics(db, model_version: Optional[str] = None) -> dict:
         if n == 0:
             return {"n_scored": 0}
 
-        accuracy = sum(1 for r in rows if r.is_correct) / n
-        high = [r for r in rows if r.confidence is not None and r.confidence >= 0.7]
-        high_acc = sum(1 for r in high if r.is_correct) / max(len(high), 1)
+        # 주지표
+        mag_hit = sum(1 for r in rows if r.is_correct) / n
 
-        # 수정
+        # calibration
+        high = [r for r in rows if r.confidence is not None and r.confidence >= 0.7]
+        high_hit = sum(1 for r in high if r.is_correct) / max(len(high), 1)
+
         return {
             "n_scored": n,
-            "magnitude_hit_rate": round(accuracy, 3),        # 🆕 변동 적중률
-            "threshold": MAGNITUDE_THRESHOLD,                 # 🆕 임계값 명시
-            "high_confidence_hit_rate": round(high_acc, 3),  # 🆕 일관성 (이름 통일)
+            "magnitude_hit_rate": round(mag_hit, 3),
+            "threshold": MAGNITUDE_THRESHOLD,
+            "high_confidence_hit_rate": round(high_hit, 3),
+            "n_high_conf": len(high),
         }
     except Exception as e:
         logger.error("prediction_metrics 실패: %s", e)
@@ -199,12 +200,10 @@ def prediction_metrics(db, model_version: Optional[str] = None) -> dict:
 def _get_price_after_trading_days(
     ticker: str, from_date_str: str, days: int = 3
 ) -> Optional[float]:
-    """from_date_str 이후 N 거래일의 종가를 pykrx로 조회."""
     try:
         from pykrx import stock as pykrx_stock
 
         base = datetime.strptime(from_date_str, "%Y-%m-%d")
-        # 여유 있게 +7일 범위 조회 후 N번째 거래일 선택
         to_dt = (base + timedelta(days=days + 7)).strftime("%Y%m%d")
         from_dt = (base + timedelta(days=1)).strftime("%Y%m%d")
 

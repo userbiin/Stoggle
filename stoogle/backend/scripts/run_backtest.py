@@ -6,14 +6,13 @@
      --from_db: NewsCache에 실제 존재하는 (ticker, date) 페어에서만 추출 (no_news skip 최소화)
      기본: KOSPI50 fallback × 거래일 무작위
   2. 각 샘플에 대해 run_analysis_at() — 5개 소스 시점 격리 예측 생성
-  3. 즉시 채점 — D+3가 이미 지난 과거 데이터이므로 한 번에 전부 채점
+  3. 즉시 채점 — D+3가 이미 지난 과거 데이터이므로 force_score_all=True로 전부 채점
   4. /api/v1/_internal/prediction-metrics?model_version=backtest_v1 로 확인
 
 실행 예시:
     cd backend/
-    python scripts/run_backtest.py --from_db --start 20260520 --end 20260602 --safety_days 3 --n_samples 50
+    python scripts/run_backtest.py --from_db --start 20260520 --end 20260605 --safety_days 3 --n_samples 50
     python scripts/run_backtest.py --n_samples 30 --start 20260522 --end 20260530
-    python scripts/run_backtest.py --n_samples 300 --model_version backtest_v2 --safety_days 0
 """
 from __future__ import annotations
 
@@ -48,7 +47,8 @@ async def run(
 ) -> None:
     from evaluation.dataset_builder import build_dataset, build_dataset_from_db
     from evaluation.backtest import run_analysis_at
-    from evaluation.prediction_scorer import score_pending_predictions
+    # force_score_all=True 를 지원하는 함수 임포트
+    from evaluation.prediction_scorer import score_all_pending, prediction_metrics
     from models.db_models import SessionLocal
 
     if from_db:
@@ -106,16 +106,41 @@ async def run(
         ok, skipped, errors, elapsed,
     )
 
-    logger.info("채점 시작 (model_version=%s)...", model_version)
-    scored_result = score_pending_predictions(db, model_version=model_version)
+    # ── 즉시 채점: force_score_all=True로 pending 잔류 방지 ──────────────
+    # 백테스트 레코드는 predicted_at이 과거라 D+3가 이미 경과했으므로
+    # is_d3_passed() 체크를 건너뛰고 전부 채점한다.
+    logger.info("채점 시작 (model_version=%s, force_score_all=True)...", model_version)
+    scored_result = score_all_pending(db, model_version=model_version)
     db.close()
 
     logger.info("채점 완료: %s", scored_result)
+
+    # 지표 요약 출력
+    db2 = SessionLocal()
+    try:
+        metrics = prediction_metrics(db2, model_version=model_version)
+        logger.info(
+            "\n=== 성능 요약 ===\n"
+            "  scored:                  %d건\n"
+            "  direction_accuracy:      %.3f  (주지표 — 랜덤 베이스라인: ~0.500)\n"
+            "  magnitude_hit_rate:      %s  (부지표 — |Δ|≥%.0f%%)\n"
+            "  high_confidence_acc:     %.3f  (confidence≥0.7 기준, n=%d)\n",
+            metrics.get("n_scored", 0),
+            metrics.get("direction_accuracy", 0),
+            f"{metrics['magnitude_hit_rate']:.3f}" if metrics.get("magnitude_hit_rate") else "N/A",
+            (metrics.get("threshold", 0.02)) * 100,
+            metrics.get("high_confidence_accuracy", 0),
+            metrics.get("n_high_conf", 0),
+        )
+    finally:
+        db2.close()
+
     logger.info(
         "\n결과 확인:\n"
         "  curl 'http://localhost:8000/api/v1/_internal/prediction-metrics?model_version=%s'\n"
-        "  python scripts/inspect_backtest.py --model_version %s",
-        model_version, model_version,
+        "  python scripts/inspect_backtest.py --model_version %s\n"
+        "  python scripts/inspect_backtest.py --model_version %s --breakdown confidence",
+        model_version, model_version, model_version,
     )
 
 
