@@ -71,14 +71,64 @@ def _regex_nouns(text: str) -> list[str]:
     return [t for t in tokens if t not in stopwords]
 
 
+def _get_cached_article_summary(
+    ticker: str,
+    urls: Optional[list[str]] = None,
+) -> Optional[str]:
+    """
+    NewsCache DB에서 summary_agent가 저장한 요약을 조회한다.
+    urls 지정 시 해당 URL 중 최신 요약 반환, 없으면 ticker 기준 최신 요약 반환.
+    DB 오류 시 None 반환 (non-blocking).
+    """
+    try:
+        from models.db_models import NewsCache, SessionLocal
+
+        db = SessionLocal()
+        try:
+            q = db.query(NewsCache.summary).filter(
+                NewsCache.ticker == ticker,
+                NewsCache.summary.isnot(None),
+                NewsCache.summary != "",
+            )
+            if urls:
+                q = q.filter(NewsCache.url.in_(urls))
+            row = q.order_by(NewsCache.fetched_at.desc()).first()
+            return row[0] if row else None
+        finally:
+            db.close()
+    except Exception:
+        return None
+
+
 async def summarize_with_llm(
     ticker: str,
     company_name: str,
     news_titles: list[str],
+    news_urls: Optional[list[str]] = None,
 ) -> Optional[str]:
     """
-    Anthropic API로 뉴스 요약 생성
+    뉴스 요약 생성. 3단계 우선순위:
+      1. NewsCache DB — summary_agent가 저장한 기사 요약 (DB 우선)
+      2. summary_agent.run() on-demand — news_urls 제공 시 실시간 요약
+      3. Claude 직접 호출 — 헤드라인 기반 투자 인사이트 (fallback)
     """
+    # 1단계: DB 캐시 (summary_agent Celery 배치 결과)
+    cached = _get_cached_article_summary(ticker, news_urls)
+    if cached:
+        return cached
+
+    # 2단계: summary_agent on-demand (URL 제공 시)
+    if news_urls:
+        from agents.summary_agent import run as summary_run
+        for url in news_urls[:3]:
+            try:
+                result = await summary_run(url)
+                if result and result.summary:
+                    return result.summary
+            except Exception:
+                pass
+
+    # 3단계: Claude 직접 호출 — 헤드라인 기반 인사이트 (기존 로직)
     if not ANTHROPIC_AVAILABLE or not os.getenv("ANTHROPIC_API_KEY"):
         return _fallback_summary(company_name, news_titles)
 
