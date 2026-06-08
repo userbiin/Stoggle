@@ -560,7 +560,12 @@ def crawl_category_news(self):
       5. dedup_and_index_news 체이닝
     """
     from agents.news_aggregator import aggregate
-    from agents.relevance_agent import Article as RelevArticle, run as relevance_run
+    from agents.relevance_agent import (
+        Article as RelevArticle,
+        run as relevance_run,
+        batch_filter,
+        map_articles_to_tickers,
+    )
 
     try:
         raw_articles = aggregate(window_minutes=70)
@@ -610,15 +615,32 @@ def crawl_category_news(self):
         for i in items
     ]
 
+    # 1단계: 공통 배치 필터 (1회) — 경제/기업 무관 기사 제거
+    try:
+        pre_filtered = asyncio.run(batch_filter(relev_articles))
+        logger.info("1단계 배치 필터: %d → %d건", len(relev_articles), len(pre_filtered))
+    except Exception as e:
+        logger.warning("배치 필터 실패 — 전체 기사로 폴백: %s", e)
+        pre_filtered = relev_articles
+
+    # 2단계: 기사별 종목 매핑 (직·간접 관련 종목 추출)
+    try:
+        ticker_map = asyncio.run(map_articles_to_tickers(pre_filtered))
+        logger.info("2단계 종목 매핑: %d개 종목에 기사 배정", len(ticker_map))
+    except Exception as e:
+        logger.warning("종목 매핑 실패 — 건너뜀: %s", e)
+        ticker_map = {}
+
     # URL → RawArticle 역방향 조회용 맵 (Redis 병합에 사용)
     url_to_raw: dict[str, object] = {a.url: a for a in raw_articles}
 
     news_for_dedup: dict[str, list[tuple]] = {}
     merged_count = 0
 
-    for ticker in KOSPI200_TICKERS:
+    for ticker, mapped_articles in ticker_map.items():
         try:
-            scored = asyncio.run(relevance_run(ticker, relev_articles))
+            # 3단계: Ollama 개별 점수 평가
+            scored = asyncio.run(relevance_run(ticker, mapped_articles))
             if not scored:
                 continue
 
