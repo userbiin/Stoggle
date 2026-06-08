@@ -486,12 +486,15 @@ def crawl_all_news(self):
     """
     KOSPI200 종목 뉴스 강제 크롤링 (1시간 주기).
 
-    크롤링 → 3단계 중복 제거 → LLM 랭킹 → Redis 캐시 저장 순으로 처리.
+    크롤링 → 3단계 중복 제거 → LLM 랭킹(relevance 필터 포함) → relevance_agent(EXAONE) 필터 → Redis 캐시 저장.
     캐시에는 항상 랭킹이 완료된 최종 목록이 저장된다.
     완료 후 dedup_and_index_news 태스크를 체이닝하여 pgvector 색인을 수행한다.
     """
     from services.news_service import fetch_news, rank_news
     from services.cache_service import set_news_cache
+    from services.stock_service import get_or_build_registry
+
+    registry = get_or_build_registry()
 
     results = {}
     news_for_dedup: dict[str, list[tuple[str, str, str]]] = {}
@@ -504,8 +507,24 @@ def crawl_all_news(self):
                 results[ticker] = 0
                 continue
 
-            # LLM 랭킹 (실패 시 키워드 폴백)
-            ranked = asyncio.run(rank_news(items))
+            # LLM 랭킹 — relevance<=1 비금융 기사 제거 포함
+            company_name = registry.get(ticker, {}).get("name", ticker)
+            ranked = asyncio.run(rank_news(items, company_name=company_name))
+
+            # relevance_agent(EXAONE) 2차 필터 — Ollama 미연결 시 gracefully skip
+            try:
+                from agents.relevance_agent import Article as RelevArticle, run as relevance_run
+                relev_articles = [
+                    RelevArticle(url=i.url, title=i.title, summary=i.summary or "")
+                    for i in ranked
+                ]
+                scored = asyncio.run(relevance_run(ticker, relev_articles))
+                if scored:
+                    relevant_urls = {s.article.url for s in scored}
+                    ranked = [i for i in ranked if i.url in relevant_urls]
+                    logger.debug("relevance_agent 필터 [%s]: %d→%d건", ticker, len(relev_articles), len(ranked))
+            except Exception as e:
+                logger.debug("relevance_agent 필터 건너뜀 (%s): %s", ticker, e)
 
             # 랭킹 완료된 목록을 Redis에 저장
             set_news_cache(ticker, [i.model_dump() for i in ranked])
@@ -591,15 +610,58 @@ def crawl_category_news(self):
         for i in items
     ]
 
+    # URL → RawArticle 역방향 조회용 맵 (Redis 병합에 사용)
+    url_to_raw: dict[str, object] = {a.url: a for a in raw_articles}
+
     news_for_dedup: dict[str, list[tuple]] = {}
+    merged_count = 0
+
     for ticker in KOSPI200_TICKERS:
         try:
             scored = asyncio.run(relevance_run(ticker, relev_articles))
-            if scored:
-                news_for_dedup[ticker] = [
-                    (s.article.url, s.article.title, s.article.summary, url_to_id.get(s.article.url))
-                    for s in scored
-                ]
+            if not scored:
+                continue
+
+            news_for_dedup[ticker] = [
+                (s.article.url, s.article.title, s.article.summary, url_to_id.get(s.article.url))
+                for s in scored
+            ]
+
+            # RSS 기사를 Redis 뉴스 캐시에 병합 (기존 Naver 금융 기사 유지)
+            try:
+                from services.cache_service import get_news_cache, set_news_cache
+
+                # scored 기사를 NewsItem dict 형식으로 변환
+                rss_items = []
+                for s in scored:
+                    raw = url_to_raw.get(s.article.url)
+                    rss_items.append({
+                        "id": 0,
+                        "title": s.article.title,
+                        "source": getattr(raw, "source", "RSS") if raw else "RSS",
+                        "published_at": getattr(raw, "published_at", "") if raw else "",
+                        "url": s.article.url,
+                        "sentiment": "neutral",
+                        "summary": s.article.summary or None,
+                        "category": getattr(raw, "category", "일반") if raw else "일반",
+                    })
+
+                # 기존 캐시(Naver 금융)와 병합 — Naver 기사 우선, RSS 기사 뒤에 추가
+                existing = get_news_cache(ticker) or []
+                existing_urls = {item["url"] for item in existing}
+                new_items = [i for i in rss_items if i["url"] not in existing_urls]
+
+                if new_items:
+                    merged = existing + new_items
+                    # id 재부여 + 20개 제한
+                    for idx, item in enumerate(merged[:20], 1):
+                        item["id"] = idx
+                    set_news_cache(ticker, merged[:20])
+                    merged_count += len(new_items)
+
+            except Exception as e:
+                logger.debug("RSS→Redis 병합 실패 (%s): %s", ticker, e)
+
         except Exception as e:
             logger.warning("relevance 판별 실패 (%s): %s", ticker, e)
 
@@ -614,6 +676,7 @@ def crawl_category_news(self):
             for st in ("rss", "section_crawl", "naver_api")
         },
         "relevant_tickers": len(news_for_dedup),
+        "merged_to_cache": merged_count,
     }
 
 
