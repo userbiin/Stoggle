@@ -113,4 +113,4 @@ class RelationsResponse(BaseModel):
     links: list[RelationLink]
     related_companies: list[RelatedCompany]
     impact: list[ImpactItem] = []
-    is_analyzing: bool = False  # 첫 조회 시 백그라운드 LLM 분석 중인 경우 True
+    discovery_status: str = "ready"   # "ready" | "pending" — 프론트가 "발굴 중..." 표시에 사용

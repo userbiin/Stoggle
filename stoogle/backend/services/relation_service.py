@@ -161,6 +161,37 @@ def has_discovered_relations(ticker: str) -> bool:
         return False
 
 
+def has_business_relations(ticker: str) -> bool:
+    """RelationCache(news|dart) 또는 company_edges에 실제 사업 관계가 있으면 True.
+    correlation 소스만 있는 경우는 '사업 관계 없음(pending)'으로 본다."""
+    try:
+        from models.db_models import RelationCache, CompanyEdge, SessionLocal
+        from sqlalchemy import or_
+
+        db = SessionLocal()
+        try:
+            if (
+                db.query(RelationCache)
+                .filter(
+                    RelationCache.ticker == ticker,
+                    RelationCache.source.in_(["news", "dart"]),
+                )
+                .first()
+            ):
+                return True
+            if (
+                db.query(CompanyEdge)
+                .filter(or_(CompanyEdge.src == ticker, CompanyEdge.dst == ticker))
+                .first()
+            ):
+                return True
+            return False
+        finally:
+            db.close()
+    except Exception:
+        return False
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Correlation → RelationCache 저장 (update_relation_graphs 태스크용)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -525,11 +556,11 @@ def compute_correlations_only(
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def compute_impact(ticker: str) -> list[ImpactItem]:
-    """
-    뉴스 기반 영향 종목 추론.
+    """뉴스 기반 영향 종목 추론 (비즈니스 관계사 UI와 독립).
 
-    발굴된 관계사(실제 비즈니스 파트너)를 우선적으로 영향 분석 대상으로 사용한다.
-    발굴된 관계가 없으면 correlation 기반 관계사로 폴백.
+    후보 풀: company_edges 1~2홉 이웃 → 없으면 발굴 관계(news|dart) → 그래도 없으면 [].
+    (correlation 전용 관계는 후보에서 제외)
+    compute_relations 중복 호출 없음.
     """
     from services.news_service import fetch_news, rank_news
     from services.stock_service import get_or_build_registry
@@ -539,17 +570,27 @@ async def compute_impact(ticker: str) -> list[ImpactItem]:
     company_name = _get_name(ticker, registry)
 
     news_items = await fetch_news(ticker)
-    ranked = await rank_news(news_items, ticker=ticker, company_name=company_name)
+    ranked = await rank_news(news_items, company_name=company_name)
     news_titles = [n.title for n in ranked[:10]]
-
-    relation_data = compute_relations(ticker)
-    related = [
-        {"ticker": r.ticker, "name": r.name, "reason": r.reason}
-        for r in relation_data.get("related_companies", [])
-    ]
-
-    if not news_titles or not related:
+    if not news_titles:
         return []
+
+    # 후보 풀: 사업 관계 그래프 이웃 (비대형주 포함)
+    candidates = _get_neighbors_from_edges(ticker)
+    if not candidates:
+        cached = _load_relation_cache(ticker)
+        candidates = [c for c in cached if c.get("source") != "correlation"]
+    if not candidates:
+        return []
+
+    related = [
+        {
+            "ticker": c["ticker"],
+            "name": _get_name(c["ticker"], registry),
+            "reason": c.get("reason", ""),
+        }
+        for c in candidates
+    ]
 
     raw_items = await run_impact_analysis(
         ticker=ticker,

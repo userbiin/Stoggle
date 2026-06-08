@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import time as _time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -123,7 +124,7 @@ def _parse_pub_dt(entry) -> Optional[datetime]:
 
 def collect(window_minutes: int = _DEFAULT_WINDOW_MINUTES) -> list[RawArticle]:
     """
-    등록된 RSS 피드를 순회하여 최근 window_minutes 이내 기사를 반환한다.
+    등록된 RSS 피드를 병렬로 수집하여 최근 window_minutes 이내 기사를 반환한다.
 
     Parameters
     ----------
@@ -140,35 +141,26 @@ def collect(window_minutes: int = _DEFAULT_WINDOW_MINUTES) -> list[RawArticle]:
         return []
 
     cutoff = datetime.now(tz=timezone.utc) - timedelta(minutes=window_minutes)
-    articles: list[RawArticle] = []
-    seen_urls: set[str] = set()
-    feed_count = 0
 
-    for source, feed_url in RSS_FEEDS:
+    def _fetch_one(source: str, feed_url: str) -> tuple[list[RawArticle], bool]:
+        """단일 RSS 피드 수집. (articles, success) 반환."""
+        feed_articles: list[RawArticle] = []
         try:
-            # requests 경유 파싱 — feedparser 직접 호출 시 User-Agent 차단되는 피드 대응
-            try:
-                resp = _requests.get(feed_url, headers=_FETCH_HEADERS, timeout=10)
-                feed = feedparser.parse(resp.content)
-            except Exception:
-                feed = feedparser.parse(feed_url)
-            count = 0
+            resp = _requests.get(feed_url, headers=_FETCH_HEADERS, timeout=10)
+            resp.raise_for_status()
+            feed = feedparser.parse(resp.content)
+
             for entry in feed.entries:
                 url = (entry.get("link") or "").strip()
                 title = (entry.get("title") or "").strip()
-                if not url or not title or url in seen_urls:
+                if not url or not title:
                     continue
-
                 pub_dt = _parse_pub_dt(entry)
-                # 발행일 없으면 허용, 명시적으로 오래된 기사만 제외
                 if pub_dt and pub_dt < cutoff:
                     continue
-
                 pub_str = pub_dt.isoformat() if pub_dt else datetime.now(tz=timezone.utc).isoformat()
                 summary = (entry.get("summary") or entry.get("description") or "").strip()
-
-                seen_urls.add(url)
-                articles.append(RawArticle(
+                feed_articles.append(RawArticle(
                     url=url,
                     title=title,
                     summary=summary,
@@ -177,13 +169,34 @@ def collect(window_minutes: int = _DEFAULT_WINDOW_MINUTES) -> list[RawArticle]:
                     category=_infer_category(source, title),
                     source_type="rss",
                 ))
-                count += 1
-
-            if count:
-                logger.debug("RSS [%s] %d건", source, count)
-            feed_count += 1
+            if feed_articles:
+                logger.debug("RSS [%s] %d건", source, len(feed_articles))
+            return feed_articles, True
         except Exception as e:
             logger.warning("RSS 피드 실패 [%s %s]: %s", source, feed_url, e)
+            return [], False
+
+    all_raw: list[RawArticle] = []
+    feed_count = 0
+
+    with ThreadPoolExecutor(max_workers=len(RSS_FEEDS)) as executor:
+        futures = {
+            executor.submit(_fetch_one, source, feed_url): (source, feed_url)
+            for source, feed_url in RSS_FEEDS
+        }
+        for future in as_completed(futures):
+            feed_articles, success = future.result()
+            if success:
+                feed_count += 1
+            all_raw.extend(feed_articles)
+
+    # 피드 간 URL 중복 제거
+    seen_urls: set[str] = set()
+    articles: list[RawArticle] = []
+    for art in all_raw:
+        if art.url not in seen_urls:
+            seen_urls.add(art.url)
+            articles.append(art)
 
     logger.info("RSS 수집 완료: %d건 (피드 %d/%d)", len(articles), feed_count, len(RSS_FEEDS))
     return articles

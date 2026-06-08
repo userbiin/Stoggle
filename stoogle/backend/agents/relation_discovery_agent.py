@@ -75,9 +75,12 @@ _SYSTEM_PROMPT = """\
 async def _get_news_text(ticker: str, max_articles: int = 15) -> str:
     try:
         from services.news_service import fetch_news, rank_news
+        from services.stock_service import get_or_build_registry
 
         items = await fetch_news(ticker, page=1)
-        ranked = await rank_news(items)
+        registry = get_or_build_registry()
+        company_name = registry.get(ticker, {}).get("name")
+        ranked = await rank_news(items, company_name=company_name)
         lines = []
         for i, item in enumerate(ranked[:max_articles]):
             lines.append(f"[뉴스 {i + 1}] {item.title}")
@@ -316,7 +319,7 @@ def _save_relations(ticker: str, resolved: list[dict]) -> int:
 # LLM call
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _call_claude(client, model: str, user_prompt: str) -> Optional[_DiscoverySchema]:
+async def _call_claude(client, model: str, user_prompt: str, ticker: str = "?") -> Optional[_DiscoverySchema]:
     try:
         response = await client.messages.create(
             model=model,
@@ -337,7 +340,7 @@ async def _call_claude(client, model: str, user_prompt: str) -> Optional[_Discov
             if block.type == "tool_use":
                 return _DiscoverySchema(**block.input)
     except Exception as e:
-        logger.error("Claude 관계 발굴 호출 실패 [%s]: %s", ticker if "ticker" in dir() else "?", e)
+        logger.error("Claude 관계 발굴 호출 실패 [%s]: %s", ticker, e)
     return None
 
 
@@ -383,7 +386,7 @@ async def discover_relations(ticker: str) -> int:
     from anthropic import AsyncAnthropic
 
     client = AsyncAnthropic(api_key=api_key)
-    result = await _call_claude(client, model, user_prompt)
+    result = await _call_claude(client, model, user_prompt, ticker)
 
     if result is None or not result.relations:
         logger.info("[%s] 발굴된 관계 없음", ticker)

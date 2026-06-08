@@ -5,7 +5,8 @@ import time
 from datetime import datetime
 
 from fastapi import APIRouter
-from models.schemas import InsightResponse
+from models.schemas import InsightResponse, PricePoint
+from services.cache_service import get_history_cache, cache_get, cache_set
 from services.stock_service import get_price_history, get_market_cap_info, get_or_build_registry
 from services.news_service import fetch_news
 from services.nlp_service import extract_keywords, summarize_with_llm
@@ -104,14 +105,39 @@ async def get_insight(ticker: str):
     market = meta.get("market", "KOSPI")
     sector = meta.get("sector", "")
 
-    # 독립적인 I/O를 asyncio.gather로 병렬 실행 — cold path ~50% 단축
+    async def _price_history_task() -> list:
+        # Stoogle:history:{ticker} 캐시 히트 시 pykrx 호출 생략
+        cached = get_history_cache(ticker)
+        if cached is not None:
+            return [PricePoint(**p) for p in cached][-90:]
+        return await asyncio.to_thread(get_price_history, ticker, 90)
+
+    async def _cap_info_task() -> dict | None:
+        # Stoogle:cap:{ticker} 캐시 히트 시 Naver Finance 호출 생략 (TTL 15분)
+        cached = cache_get(f"Stoogle:cap:{ticker}")
+        if cached is not None:
+            return cached
+        result = await asyncio.to_thread(get_market_cap_info, ticker)
+        if result:
+            cache_set(f"Stoogle:cap:{ticker}", result, ttl=900)
+        return result
+
+    # 독립적인 I/O를 asyncio.gather로 병렬 실행
     price_history, cap_info, news_items = await asyncio.gather(
-        asyncio.to_thread(get_price_history, ticker, 90),
-        asyncio.to_thread(get_market_cap_info, ticker),
+        _price_history_task(),
+        _cap_info_task(),
         fetch_news(ticker, page=1),
     )
 
     titles = [n.title for n in news_items]
+
+    # summary Redis 캐시 확인 (TTL 30분) — 캐시 미스 시에만 Claude 호출
+    _sum_key = f"Stoogle:summary:{ticker}"
+    summary = cache_get(_sum_key)
+    if summary is None:
+        summary = await summarize_with_llm(ticker, company_name, titles) if titles else None
+        if summary:
+            cache_set(_sum_key, summary, ttl=1800)
 
     latest_price = None
     change = None
