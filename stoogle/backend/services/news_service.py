@@ -194,9 +194,13 @@ async def rank_news(
                 f"각 기사를 '{subject}'의 주가에 미치는 영향 기준으로 분석하세요.\n\n"
                 f"{titles}\n\n"
                 "분류 기준:\n"
-                f"- positive: '{subject}'에 직접 호재인 기사\n"
-                f"- negative: '{subject}'에 직접 악재인 기사\n"
-                f"- neutral: '{subject}'와 무관하거나 다른 회사 위주 기사, 간접적·거시적 기사\n\n"
+                f"- positive: '{subject}'에 직접 호재인 기사 (score 6~10)\n"
+                f"- negative: '{subject}'에 직접 악재인 기사 (score 6~10)\n"
+                f"- neutral: '{subject}'와 무관하거나 다른 회사 위주 기사, 간접적·거시적 기사 (score 3~5)\n\n"
+                "주의: 다음 유형은 반드시 score 1~2로 설정하세요:\n"
+                "- 골프대회·스포츠 이벤트·문화행사 후원 (예: OO컵, 마스터즈, 대회 결과)\n"
+                "- 사회공헌·봉사·기부·ESG 행사 기사\n"
+                "- 회사 이름만 언급되고 주가·실적·사업과 무관한 기사\n\n"
                 "반드시 JSON 배열로만 응답하세요 (다른 텍스트 없이):\n"
                 '[{"index": 1, "sentiment": "positive", "score": 8}, ...]'
             )}],
@@ -216,10 +220,30 @@ async def rank_news(
             item.sentiment = sentiment
             ranked.append((score, item))
         ranked.sort(key=lambda x: x[0], reverse=True)
-        return [item for _, item in ranked]
+        # score 1~2는 후원행사·스포츠·무관 기사 → 필터 제거
+        return [item for score, item in ranked if score >= 3]
     except Exception as e:
         logger.warning("LLM 감성 분석 실패, 키워드 폴백: %s", e)
         return _rank_by_heuristic(items)
+
+
+_IRRELEVANT_PATTERNS = [
+    "골프", "테니스", "마라톤", "축구대회", "야구", "스포츠",
+    "마스터즈", "오픈선수권", "대회 결과", "우승", "준우승",
+    "봉사", "기부", "사회공헌", "ESG 행사", "사랑의", "나눔",
+    "컵대회", "후원 행사", "문화행사", "어워드 시상",
+]
+_STOCK_KEYWORDS = [
+    "주가", "상장", "매출", "실적", "영업이익", "투자", "인수", "공시",
+    "계약", "협약", "수주", "증자", "배당", "리포트", "목표주가",
+]
+
+
+def _is_irrelevant(title: str) -> bool:
+    """후원 이벤트·스포츠·사회공헌 등 주가 무관 기사 판별."""
+    has_irrelevant = any(kw in title for kw in _IRRELEVANT_PATTERNS)
+    has_stock = any(kw in title for kw in _STOCK_KEYWORDS)
+    return has_irrelevant and not has_stock
 
 
 def _rank_by_heuristic(items: list[NewsItem]) -> list[NewsItem]:
@@ -237,7 +261,8 @@ def _rank_by_heuristic(items: list[NewsItem]) -> list[NewsItem]:
                 s -= 1
         return s
 
-    for item in items:
+    filtered = [item for item in items if not _is_irrelevant(item.title)]
+    for item in filtered:
         s = score(item)
         if s > 0:
             item.sentiment = "positive"
@@ -246,4 +271,4 @@ def _rank_by_heuristic(items: list[NewsItem]) -> list[NewsItem]:
         else:
             item.sentiment = "neutral"
 
-    return sorted(items, key=lambda x: abs(score(x)), reverse=True)
+    return sorted(filtered, key=lambda x: abs(score(x)), reverse=True)
