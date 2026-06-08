@@ -138,7 +138,8 @@ async def summarize_with_llm(
 {titles_text}
 
 위 뉴스를 바탕으로 투자자 관점에서 2~3문장의 핵심 인사이트를 한국어로 작성하세요.
-수치나 구체적인 내용을 포함하되, 투자 권유는 하지 마세요."""
+수치나 구체적인 내용을 포함하되, 투자 권유는 하지 마세요.
+제목이나 헤더(#) 없이 본문 문장만 작성하세요."""
 
     try:
         client = AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), timeout=30.0)
@@ -148,9 +149,16 @@ async def summarize_with_llm(
             temperature=0.3,
             max_tokens=300,
         )
-        return response.content[0].text.strip() if response.content else None
+        raw = response.content[0].text.strip() if response.content else None
+        return _strip_headings(raw) if raw else None
     except Exception:
         return _fallback_summary(company_name, news_titles)
+
+
+def _strip_headings(text: str) -> str:
+    """LLM이 추가한 마크다운 헤딩(# 으로 시작하는 줄)을 제거."""
+    lines = [line for line in text.splitlines() if not line.strip().startswith("#")]
+    return "\n".join(lines).strip()
 
 
 def _fallback_summary(company_name: str, titles: list[str]) -> str:
