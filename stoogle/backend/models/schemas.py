@@ -97,6 +97,7 @@ class RelatedCompany(BaseModel):
     correlation: float
     relation_type: str = "관심"  # 경쟁사|공급사|납품업체|협력사|계열사|고객사|유통사|관심
     reason: str
+    
 
 
 class ImpactItem(BaseModel):

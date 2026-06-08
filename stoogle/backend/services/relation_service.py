@@ -306,6 +306,7 @@ def compute_relations(
         related.append(RelatedCompany(
             ticker=cand, name=cand_name,
             correlation=item.get("correlation", 0.0), reason=item["reason"],
+            relation_type=item.get("relation_type", "관심"),
         ))
 
     related.sort(key=lambda x: x.correlation, reverse=True)

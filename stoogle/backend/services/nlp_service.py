@@ -33,42 +33,65 @@ except Exception:
     OKT_AVAILABLE = False
 
 
+# 주식 도메인 불용어 (일반 명사지만 인사이트 가치 없음)
+_STOCK_STOPWORDS = {
+    # 동작/상태 명사
+    "흐름", "형성", "강화", "집중", "매수", "추천", "강세", "상승률",
+    "움직임", "전망", "분석", "영향", "관련", "기반", "진행", "확대",
+    "증가", "감소", "하락", "상승", "급등", "급락", "회복", "둔화",
+    "지속", "유지", "개선", "악화", "부진", "호조", "부담", "우려",
+    "기대", "가능", "예상", "전일", "오전", "오후", "이날", "최근",
+    "현재", "올해", "내년", "지난해", "올해", "분기", "하반기", "상반기",
+    # 너무 일반적인 명사
+    "시장", "주가", "종목", "투자", "기업", "업체", "회사", "사업",
+    "실적", "수익", "매출", "영업", "이익", "비용", "수요", "공급",
+    "가격", "거래", "규모", "수준", "대비", "이상", "이하", "기준",
+    "국내", "해외", "글로벌", "부문", "분야", "업종", "섹터",
+}
+
+
 def extract_keywords(texts: list[str], top_n: int = 15) -> list[Keyword]:
-    """
-    뉴스 텍스트에서 명사 키워드 추출.
-    konlpy 미설치 시 간단한 정규식 fallback 사용.
-    """
     combined = " ".join(texts)
+    if not combined.strip():
+        return []
 
     if OKT_AVAILABLE:
         try:
             okt = Okt()
-            nouns = okt.nouns(combined)
-            nouns = [n for n in nouns if len(n) >= 2]
+            # 명사만, 2글자 이상, 불용어 제거
+            nouns = [
+                n for n in okt.nouns(combined)
+                if len(n) >= 2 and n not in _STOCK_STOPWORDS
+            ]
         except Exception:
             nouns = _regex_nouns(combined)
     else:
         nouns = _regex_nouns(combined)
 
     counter = Counter(nouns)
+    
+    # 1회만 등장한 단어 제거 (노이즈)
+    counter = Counter({k: v for k, v in counter.items() if v >= 2})
+    
     most_common = counter.most_common(top_n)
     if not most_common:
         return []
 
     max_count = most_common[0][1]
     return [
-        Keyword(text=word, value=int(cnt / max_count * 80) + 10)
+        Keyword(text=word, value=int(cnt / max_count * 80) + 20)
         for word, cnt in most_common
     ]
 
 
 def _regex_nouns(text: str) -> list[str]:
-    """
-    konlpy 없이 한글 단어 단순 추출 (fallback)
-    """
-    stopwords = {"있는", "없는", "이번", "지난", "위한", "통해", "대한", "관련", "이후", "위해"}
+    stopwords = {
+        "있는", "없는", "이번", "지난", "위한", "통해", "대한", "관련",
+        "이후", "위해", "으로", "에서", "부터", "까지", "라는", "이라",
+    } | _STOCK_STOPWORDS
     tokens = re.findall(r"[가-힣]{2,}", text)
     return [t for t in tokens if t not in stopwords]
+
 
 
 def _get_cached_article_summary(

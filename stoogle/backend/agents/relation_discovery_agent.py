@@ -65,6 +65,7 @@ _SYSTEM_PROMPT = """\
 - confidence 기준: 원문에 직접 명시=0.85~1.0 / 간접 암시=0.5~0.84 / 추정=0.3~0.49
 - 한 기업이 여러 관계 유형을 가질 수 있음 (예: 동시에 납품업체이자 경쟁사)
 - company_name은 원문에 등장한 기업명 그대로 사용 (괄호·주식회사 표기 포함 무관)
+- 주가 동조화·같은 섹터라는 이유만으로 관계를 추출하지 말 것. 실제 거래·계약·지배구조 근거가 없으면 목록에 넣지 않는다. 
 """
 
 
@@ -412,7 +413,15 @@ async def discover_relations(ticker: str) -> int:
         if existing is None or item.confidence > existing["confidence"]:
             best[resolved_ticker] = entry
 
-    resolved = list(best.values())
+    _NOISE_PHRASES = [
+    "주가 동조화", "단순 같은 섹터", "실제 비즈니스 거래 관계를 나타내지 않음",
+    "가격 동조화", "섹터 전반", "코스피 상승 시 함께",
+]
+
+    resolved = [
+        r for r in best.values()
+        if not any(p in r["reason"] for p in _NOISE_PHRASES)
+    ]
     count = _save_relations(ticker, resolved)
     logger.info("[%s] 관계 발굴 완료: %d건 저장 (후보 %d건)", ticker, count, len(result.relations))
     return count

@@ -4,7 +4,6 @@ import axios from 'axios';
 import { mockInsight, mockNews, mockRelations, mockImpact } from '../utils/mockData';
 import TopBar from '../components/TopBar';
 import PriceChart from '../components/PriceChart';
-import WordCloudSection from '../components/WordCloudSection';
 import NewsSection from '../components/NewsSection';
 import RelationGraph from '../components/RelationGraph';
 import RelationList from '../components/RelationList';
@@ -37,7 +36,44 @@ const styles = {
   },
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' },
   spinner: { padding: '80px 0', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '15px' },
+
+  // discovery_status="pending" 상태 카드
+  pendingCard: {
+    background: 'var(--color-surface)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 'var(--radius-md)',
+    padding: '40px 24px',
+    boxShadow: 'var(--shadow-sm)',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '12px',
+    textAlign: 'center',
+  },
+  pendingIcon: {
+    fontSize: '28px',
+    animation: 'spin 2s linear infinite',
+  },
+  pendingTitle: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: 'var(--color-text-primary)',
+  },
+  pendingDesc: {
+    fontSize: '12px',
+    color: 'var(--color-text-muted)',
+    lineHeight: '1.6',
+  },
 };
+
+// CSS 애니메이션을 인라인으로 주입
+if (typeof document !== 'undefined' && !document.getElementById('stoogle-spin-style')) {
+  const styleEl = document.createElement('style');
+  styleEl.id = 'stoogle-spin-style';
+  styleEl.textContent = `@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`;
+  document.head.appendChild(styleEl);
+}
 
 const positive = { color: 'var(--color-negative)' };
 const negative = { color: 'var(--color-accent)' };
@@ -49,12 +85,27 @@ function fmt(n, suffix = '') {
   return n.toLocaleString('ko-KR') + suffix;
 }
 
+function PendingRelationCard() {
+  return (
+    <div style={styles.pendingCard}>
+      <div style={styles.pendingIcon}>⚙️</div>
+      <div style={styles.pendingTitle}>기업 관계 발굴 중입니다...</div>
+      <div style={styles.pendingDesc}>
+        DART 공시 및 뉴스 데이터를 분석해<br />
+        비즈니스 관계사를 자동으로 추출하고 있습니다.<br />
+        잠시 후 새로고침해 주세요.
+      </div>
+    </div>
+  );
+}
+
 export default function CompanyDetailPage() {
   const { ticker } = useParams();
   const [insight, setInsight] = useState(null);
   const [news, setNews] = useState([]);
   const [relations, setRelations] = useState(null);
   const [impact, setImpact] = useState([]);
+  const [discoveryStatus, setDiscoveryStatus] = useState('ready');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -65,6 +116,7 @@ export default function CompanyDetailPage() {
         setNews(mockNews);
         setRelations(mockRelations);
         setImpact(mockImpact);
+        setDiscoveryStatus('ready');
         setLoading(false);
       }, 400);
       return;
@@ -74,36 +126,36 @@ export default function CompanyDetailPage() {
       axios.get(`/api/v1/insight/${ticker}`),
       axios.get(`/api/v1/news/${ticker}`),
       axios.get(`/api/v1/relations/${ticker}`),
-    ]).then(([i, n, r]) => {
-      setInsight(i.data);
-      setNews(n.data.news || []);
-      setRelations(r.data);
-      setImpact(r.data.impact || []);
-    }).catch(console.error).finally(() => setLoading(false));
-  }, [ticker]);
+    ])
+      .then(([insightRes, newsRes, relRes]) => {
+        setInsight(insightRes.data);
+        setNews(newsRes.data.news || []);
 
-  // 발굴 중일 때 relations만 폴링 (10초 간격)
-  useEffect(() => {
-    if (USE_MOCK || !relations?.is_analyzing) return;
-    const id = setInterval(() => {
-      axios.get(`/api/v1/relations/${ticker}`).then((r) => {
-        setRelations(r.data);
-        setImpact(r.data.impact || []);
-      }).catch(console.error);
-    }, 10000);
-    return () => clearInterval(id);
-  }, [ticker, relations?.is_analyzing]);
+        const relData = relRes.data;
+        setRelations(relData);
+
+        // impact는 relations API 응답에서 가져옴
+        setImpact(relData.impact || []);
+
+        // discovery_status 처리
+        setDiscoveryStatus(relData.discovery_status || 'ready');
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [ticker]);
 
   if (loading) return <><TopBar /><div style={styles.spinner}>데이터 불러오는 중...</div></>;
   if (!insight) return <><TopBar /><div style={styles.spinner}>데이터를 찾을 수 없습니다.</div></>;
 
   const isUp = insight.change >= 0;
+  const isPending = discoveryStatus === 'pending';
 
   return (
     <div style={styles.page}>
       <TopBar />
       <div style={styles.body}>
-        {/* 헤더 */}
+
+        {/* 헤더: 기업 기본 정보 + 주가 */}
         <div style={styles.header}>
           <div style={styles.headerTop}>
             <div>
@@ -145,24 +197,26 @@ export default function CompanyDetailPage() {
         {/* 주가 차트 */}
         <PriceChart history={insight.price_history} name={insight.name} />
 
-        {/* 키워드 + 뉴스 */}
-        <div style={styles.grid2}>
-          <WordCloudSection keywords={insight.keywords} />
-          <NewsSection news={news} />
-        </div>
+        {/* 뉴스 */}
+        <NewsSection news={news} />
 
-        {/* ── 비즈니스 관계사: 과거 뉴스·공시 소급 LLM 분석 → DB 캐시 ─── */}
-        <div style={styles.grid2}>
-          <RelationGraph
-            data={relations}
-            centerId={ticker}
-            isAnalyzing={relations?.is_analyzing ?? false}
-          />
-          <RelationList companies={relations?.related_companies || []} isAnalyzing={relations?.is_analyzing ?? false} />
-        </div>
+        {/* 관계 그래프 + 관계 목록 */}
+        {/* discovery_status가 pending이면 두 칸 모두 pending UI로 */}
+        {isPending ? (
+          <div style={styles.grid2}>
+            <PendingRelationCard />
+            <PendingRelationCard />
+          </div>
+        ) : (
+          <div style={styles.grid2}>
+            <RelationGraph data={relations} centerId={ticker} />
+            <RelationList companies={relations?.related_companies || []} />
+          </div>
+        )}
 
-        {/* ── 뉴스 연동 종목: 최신 뉴스 기준 주가 변동 가능 기업 ──────── */}
+        {/* 뉴스 기반 주가 영향 예상 종목 */}
         <ImpactList items={impact} />
+
       </div>
     </div>
   );

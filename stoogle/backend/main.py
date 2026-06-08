@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()  # pykrx 임포트 전에 환경 변수 로드 (기본 인자 평가 타이밍 문제 방지)
+
 import time
 import logging
 import httpx
@@ -6,13 +9,10 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from dotenv import load_dotenv
 
 from routers import search, insight, news, relations
 from evaluation.metrics_api import router as metrics_router
 from observability import setup_logging
-
-load_dotenv()
 setup_logging()
 
 logger = logging.getLogger("stoogle.http")
