@@ -109,16 +109,24 @@ def _get_company_info(ticker: str) -> tuple[str, str]:
     return (ticker, "")
 
 
+def _normalize_name(s: str) -> str:
+    """종목명 정규화: 공백 제거 + 소문자 (예: 'SK 하이닉스' → 'sk하이닉스')."""
+    return s.replace(" ", "").lower()
+
+
 def _build_name_to_ticker_map() -> dict[str, str]:
     """
-    companies 테이블에서 { 회사명: ticker } 매핑을 구축 (앱 시작 후 1회 캐시).
-    _KO_ALIAS 역방향도 포함하여 한글 별칭으로도 조회 가능하게 함.
+    { 정규화된_회사명: ticker } 매핑 구축 (1회 캐시).
+    1순위 DB → 2순위 Redis fallback. _KO_ALIAS 역방향 포함.
+    키는 _normalize_name() 적용 — 조회 시에도 동일하게 정규화 필요.
     """
     global _NAME_TO_TICKER
     if _NAME_TO_TICKER:
         return _NAME_TO_TICKER
 
     result: dict[str, str] = {}
+
+    # 1순위: DB companies 테이블
     try:
         from models.db_models import SessionLocal, Company
         db = SessionLocal()
@@ -129,28 +137,47 @@ def _build_name_to_ticker_map() -> dict[str, str]:
         finally:
             db.close()
     except Exception as e:
-        logger.warning("name→ticker 맵 구축 실패: %s", e)
+        logger.warning("name→ticker 맵 DB 조회 실패: %s", e)
 
-    # _KO_ALIAS 역방향 보강 (예: "NAVER"→"035420" 가 있으면 "네이버"→"035420" 추가)
+    # 2순위: Redis 레지스트리 fallback (DB가 비어 있을 때)
+    if not result:
+        try:
+            from services.cache_service import get_ticker_registry
+            registry = get_ticker_registry() or {}
+            for ticker, meta in registry.items():
+                name = meta.get("name", "")
+                if name:
+                    result[name] = ticker
+            if result:
+                logger.info("name→ticker 맵: Redis fallback으로 %d개 종목 로드", len(result))
+        except Exception as e:
+            logger.warning("Redis fallback 실패: %s", e)
+
+    # _KO_ALIAS 역방향 보강 (예: "NAVER"가 있으면 "네이버" 추가)
     for en_name, ko_name in _KO_ALIAS.items():
         if en_name in result:
             result[ko_name] = result[en_name]
         elif ko_name in result:
             result[en_name] = result[ko_name]
 
-    _NAME_TO_TICKER = result
-    logger.info("name→ticker 맵 구축 완료: %d개 종목", len(result))
-    return result
+    # 키 정규화: 공백 제거 + 소문자 → 조회 일관성 확보
+    normalized = {_normalize_name(k): v for k, v in result.items()}
+    _NAME_TO_TICKER = normalized
+    logger.info("name→ticker 맵 구축 완료: %d개 종목", len(normalized))
+    return normalized
 
 
 # ---------------------------------------------------------------------------
 # 1단계: Ollama 배치 필터 (공통 1회)
 # ---------------------------------------------------------------------------
 
-async def _batch_filter_once(articles: list[Article]) -> list[int]:
+async def _batch_filter_once(articles: list[Article]) -> Optional[list[int]]:
     """
     articles 목록에서 경제/기업/주식시장 관련 기사 인덱스(1-based) 반환.
-    파싱 실패 시 빈 리스트 반환.
+
+    반환값:
+      list[int] — 파싱 성공 (빈 배열 포함: 경제 기사가 진짜 없는 경우)
+      None      — 파싱 실패 또는 API 에러 → 호출자가 폴백 처리
     """
     titles = "\n".join(f"{i+1}. {a.title}" for i, a in enumerate(articles))
     prompt = (
@@ -175,18 +202,19 @@ async def _batch_filter_once(articles: list[Article]) -> list[int]:
         match = re.search(r"\[[\d,\s]*\]", raw)
         if not match:
             logger.warning("배치 필터 파싱 실패: %r", raw[:200])
-            return []
+            return None  # 파싱 실패 → 폴백 트리거
         indices = [int(x) for x in re.findall(r"\d+", match.group())]
-        return [i for i in indices if 1 <= i <= len(articles)]
+        return [i for i in indices if 1 <= i <= len(articles)]  # 빈 배열도 유효한 결과
     except Exception as e:
         logger.error("배치 필터 Ollama 호출 실패: %s", e)
-        return []
+        return None  # API 에러 → 폴백 트리거
 
 
 async def batch_filter(articles: list[Article]) -> list[Article]:
     """
     전체 기사에서 경제/기업 관련 기사만 추출 (공통 1회 실행).
-    800건 초과 시 자동 분할. Ollama 실패 시 원본 전체 반환 (폴백).
+    800건 초과 시 자동 분할. Ollama 실패(None) 시 원본 전체 반환 (폴백).
+    정상 빈 배열([]) 시 빈 리스트 반환 — 경제 기사가 진짜 없는 경우.
     """
     if not articles:
         return []
@@ -197,11 +225,20 @@ async def batch_filter(articles: list[Article]) -> list[Article]:
         mid = len(articles) // 2
         ids_1 = await _batch_filter_once(articles[:mid])
         ids_2 = await _batch_filter_once(articles[mid:])
-        indices = ids_1 + [i + mid for i in ids_2]
+        if ids_1 is None or ids_2 is None:
+            indices = None
+        else:
+            indices = ids_1 + [i + mid for i in ids_2]
+
+    if indices is None:
+        # 파싱 실패 / API 에러 → 전체 폴백
+        logger.warning("배치 필터 실패 — %d건 전체 폴백", len(articles))
+        return articles
 
     if not indices:
-        logger.warning("배치 필터 결과 없음 — 원본 %d건 폴백", len(articles))
-        return articles
+        # 정상 빈 배열 → 경제 관련 기사 없음
+        logger.info("배치 필터: 경제 관련 기사 0건")
+        return []
 
     filtered = [articles[i - 1] for i in indices]
     logger.info("1단계 배치 필터: %d → %d건", len(articles), len(filtered))
@@ -248,7 +285,11 @@ async def _map_article_once(article: Article, name_map: dict[str, str]) -> list[
             logger.warning("종목 매핑 파싱 실패: %r", raw[:200])
             return []
         names: list[str] = json.loads(match.group())
-        tickers = [name_map[n] for n in names if n in name_map]
+        tickers = [
+            name_map[_normalize_name(n)]
+            for n in names
+            if _normalize_name(n) in name_map
+        ]
         return list(dict.fromkeys(tickers))  # 중복 제거, 순서 유지
     except Exception as e:
         logger.error("종목 매핑 Ollama 호출 실패 [%s]: %s", article.title[:40], e)
