@@ -82,6 +82,18 @@ export default function CompanyDetailPage() {
     }).catch(console.error).finally(() => setLoading(false));
   }, [ticker]);
 
+  // 발굴 중일 때 relations만 폴링 (10초 간격)
+  useEffect(() => {
+    if (USE_MOCK || !relations?.is_analyzing) return;
+    const id = setInterval(() => {
+      axios.get(`/api/v1/relations/${ticker}`).then((r) => {
+        setRelations(r.data);
+        setImpact(r.data.impact || []);
+      }).catch(console.error);
+    }, 10000);
+    return () => clearInterval(id);
+  }, [ticker, relations?.is_analyzing]);
+
   if (loading) return <><TopBar /><div style={styles.spinner}>데이터 불러오는 중...</div></>;
   if (!insight) return <><TopBar /><div style={styles.spinner}>데이터를 찾을 수 없습니다.</div></>;
 
@@ -146,7 +158,7 @@ export default function CompanyDetailPage() {
             centerId={ticker}
             isAnalyzing={relations?.is_analyzing ?? false}
           />
-          <RelationList companies={relations?.related_companies || []} />
+          <RelationList companies={relations?.related_companies || []} isAnalyzing={relations?.is_analyzing ?? false} />
         </div>
 
         {/* ── 뉴스 연동 종목: 최신 뉴스 기준 주가 변동 가능 기업 ──────── */}

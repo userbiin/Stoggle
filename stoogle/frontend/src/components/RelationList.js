@@ -33,6 +33,18 @@ const s = {
     fontSize: '12px', color: 'var(--color-text-muted)',
     marginBottom: '16px',
   },
+  analyzing: {
+    display: 'flex', alignItems: 'center', gap: '8px',
+    background: '#f0eeff', border: '1px solid #c8bfff',
+    borderRadius: '8px', padding: '10px 14px',
+    fontSize: '12px', color: 'var(--color-brand)',
+    marginBottom: '16px',
+  },
+  dot: {
+    width: '8px', height: '8px', borderRadius: '50%',
+    background: 'var(--color-brand)', flexShrink: 0,
+    animation: 'pulse 1.4s ease-in-out infinite',
+  },
   item: {
     padding: '12px 0',
     borderBottom: '1px solid var(--color-border)',
@@ -67,15 +79,23 @@ const s = {
   },
 };
 
-export default function RelationList({ companies = [] }) {
+export default function RelationList({ companies = [], isAnalyzing = false }) {
   const navigate = useNavigate();
 
   return (
     <div style={s.card}>
+      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }`}</style>
       <div style={s.header}>비즈니스 관계사</div>
       <div style={s.sub}>과거 뉴스·공시 소급 분석 기반 — 협력사 · 공급업체 · 경쟁사 등 실제 사업 관계 기업</div>
 
-      {companies.length === 0 ? (
+      {isAnalyzing && (
+        <div style={s.analyzing}>
+          <span style={s.dot} />
+          기업 관계 발굴 중입니다... 잠시 후 자동 업데이트됩니다.
+        </div>
+      )}
+
+      {companies.length === 0 && !isAnalyzing ? (
         <div style={s.empty}>관계사 정보가 없습니다.</div>
       ) : (
         companies.map((c) => {
