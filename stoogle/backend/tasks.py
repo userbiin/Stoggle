@@ -486,7 +486,7 @@ def crawl_all_news(self):
     """
     KOSPI200 종목 뉴스 강제 크롤링 (1시간 주기).
 
-    크롤링 → 3단계 중복 제거 → LLM 랭킹 → Redis 캐시 저장 순으로 처리.
+    크롤링 → 3단계 중복 제거 → LLM 랭킹(relevance 필터 포함) → relevance_agent(EXAONE) 필터 → Redis 캐시 저장.
     캐시에는 항상 랭킹이 완료된 최종 목록이 저장된다.
     완료 후 dedup_and_index_news 태스크를 체이닝하여 pgvector 색인을 수행한다.
     """
@@ -508,8 +508,24 @@ def crawl_all_news(self):
                 results[ticker] = 0
                 continue
 
-            # LLM 랭킹 (실패 시 키워드 폴백)
-            ranked = asyncio.run(rank_news(items))
+            # LLM 랭킹 — relevance<=1 비금융 기사 제거 포함
+            company_name = registry.get(ticker, {}).get("name", ticker)
+            ranked = asyncio.run(rank_news(items, company_name=company_name))
+
+            # relevance_agent(EXAONE) 2차 필터 — Ollama 미연결 시 gracefully skip
+            try:
+                from agents.relevance_agent import Article as RelevArticle, run as relevance_run
+                relev_articles = [
+                    RelevArticle(url=i.url, title=i.title, summary=i.summary or "")
+                    for i in ranked
+                ]
+                scored = asyncio.run(relevance_run(ticker, relev_articles))
+                if scored:
+                    relevant_urls = {s.article.url for s in scored}
+                    ranked = [i for i in ranked if i.url in relevant_urls]
+                    logger.debug("relevance_agent 필터 [%s]: %d→%d건", ticker, len(relev_articles), len(ranked))
+            except Exception as e:
+                logger.debug("relevance_agent 필터 건너뜀 (%s): %s", ticker, e)
 
             # 랭킹 완료된 목록을 Redis에 저장
             set_news_cache(ticker, [i.model_dump() for i in ranked])

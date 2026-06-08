@@ -1,15 +1,22 @@
 """
 종목 관련도 판별 에이전트
 
-2단계 구조:
-  1단계 — 규칙 기반 프리필터 (기업명·산업 키워드 매칭)
-  2단계 — EXAONE 3.5 API 문맥 판별 (0~5점)
+3단 파이프라인:
+  1단계 — Ollama 배치 필터 (공통 1회): 경제/기업 무관 기사 제거
+  2단계 — 기사별 종목 매핑 (기사당 1회): 직·간접 관련 종목 추출
+  3단계 — Ollama 개별 점수 (종목×기사): 4점 이상만 저장
+
+흐름:
+  batch_filter(articles)              →  filtered: list[Article]       (공통, 1회)
+  map_articles_to_tickers(filtered)   →  { ticker: [Article, ...] }    (기사당 1회)
+  run(ticker, mapped_articles)        →  list[ScoredArticle]            (종목별)
 
 4점 미만은 폐기, 4점 이상만 반환.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -30,25 +37,22 @@ _OLLAMA_BASE_URL = _base if _base.endswith("/v1") else f"{_base}/v1"
 _OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "exaone3.5:7.8b")
 _OLLAMA_CONCURRENCY = 5   # 동시 API 호출 수 제한
 _SCORE_THRESHOLD = 4       # 이 점수 미만은 폐기
+_MAX_BATCH_SIZE = 800      # 배치 1회 최대 기사 수 (컨텍스트 한도 대응)
 
-# ---------------------------------------------------------------------------
-# 섹터별 산업 키워드
-# ---------------------------------------------------------------------------
-
-_SECTOR_KEYWORDS: dict[str, list[str]] = {
-    "반도체": ["반도체", "D램", "낸드", "HBM", "파운드리", "웨이퍼", "칩", "메모리"],
-    "전자": ["전자", "스마트폰", "디스플레이", "OLED", "LCD", "가전"],
-    "자동차": ["자동차", "전기차", "EV", "하이브리드", "배터리", "자율주행", "수소차"],
-    "바이오": ["바이오", "제약", "신약", "임상", "FDA", "허가", "의약품", "백신"],
-    "IT": ["소프트웨어", "플랫폼", "클라우드", "AI", "인공지능", "데이터센터", "검색"],
-    "화학": ["화학", "배터리소재", "리튬", "양극재", "전해질", "석유화학"],
-    "에너지": ["에너지", "석유", "가스", "태양광", "풍력", "원전"],
-    "금융": ["금융", "은행", "보험", "증권", "금리", "대출"],
-    "통신": ["통신", "5G", "네트워크", "인터넷", "미디어"],
+# 영문 등록명 → 한글 별칭 매핑 (레지스트리에 영문명으로 등록된 경우)
+_KO_ALIAS: dict[str, str] = {
+    "NAVER": "네이버",
+    "POSCO": "포스코",
+    "KT": "케이티",
+    "LG": "엘지",
+    "SK": "에스케이",
+    "KB": "케이비",
+    "NH": "엔에이치",
 }
 
-# 런타임 캐시 (DB → pykrx 조회 결과를 메모이제이션)
-_TICKER_INFO: dict[str, tuple[str, str]] = {}
+# 런타임 캐시
+_TICKER_INFO: dict[str, tuple[str, str]] = {}   # ticker → (name, sector)
+_NAME_TO_TICKER: dict[str, str] = {}            # 회사명 → ticker (앱 시작 1회)
 
 
 # ---------------------------------------------------------------------------
@@ -70,16 +74,14 @@ class ScoredArticle:
 
 
 # ---------------------------------------------------------------------------
-# 1단계: 규칙 기반 프리필터
+# 회사 정보 조회
 # ---------------------------------------------------------------------------
 
 def _get_company_info(ticker: str) -> tuple[str, str]:
     """종목코드 → (회사명, 섹터). DB → pykrx → 캐시 순으로 조회."""
-    # 캐시 확인
     if ticker in _TICKER_INFO:
         return _TICKER_INFO[ticker]
 
-    # DB 조회
     try:
         from models.db_models import SessionLocal, Company
         db = SessionLocal()
@@ -94,7 +96,6 @@ def _get_company_info(ticker: str) -> tuple[str, str]:
     except Exception as e:
         logger.debug("DB 조회 실패: %s", e)
 
-    # pykrx fallback
     try:
         from pykrx import stock as pykrx_stock
         name = pykrx_stock.get_market_ticker_name(ticker)
@@ -108,31 +109,237 @@ def _get_company_info(ticker: str) -> tuple[str, str]:
     return (ticker, "")
 
 
-def _build_keywords(company_name: str, sector: str) -> list[str]:
-    """회사명 + 섹터 키워드 목록 생성."""
-    keywords = [company_name]
-
-    # 회사명 축약 (예: 4자 이상이면 앞 2자를 추가 키워드로 사용)
-    if len(company_name) > 3:
-        keywords.append(company_name[:2])
-
-    # 섹터 키워드 확장
-    for sector_key, kws in _SECTOR_KEYWORDS.items():
-        if sector_key in sector or sector_key in company_name:
-            keywords.extend(kws)
-            break
-
-    return keywords
+def _normalize_name(s: str) -> str:
+    """종목명 정규화: 공백 제거 + 소문자 (예: 'SK 하이닉스' → 'sk하이닉스')."""
+    return s.replace(" ", "").lower()
 
 
-def _prefilter(article: Article, keywords: list[str]) -> bool:
-    """1단계: 제목+요약에 키워드가 하나라도 포함되면 통과."""
-    text = f"{article.title} {article.summary}".lower()
-    return any(kw.lower() in text for kw in keywords)
+def _build_name_to_ticker_map() -> dict[str, str]:
+    """
+    { 정규화된_회사명: ticker } 매핑 구축 (1회 캐시).
+    1순위 DB → 2순위 Redis fallback. _KO_ALIAS 역방향 포함.
+    키는 _normalize_name() 적용 — 조회 시에도 동일하게 정규화 필요.
+    """
+    global _NAME_TO_TICKER
+    if _NAME_TO_TICKER:
+        return _NAME_TO_TICKER
+
+    result: dict[str, str] = {}
+
+    # 1순위: DB companies 테이블
+    try:
+        from models.db_models import SessionLocal, Company
+        db = SessionLocal()
+        try:
+            for row in db.query(Company).all():
+                if row.name and row.ticker:
+                    result[row.name] = row.ticker
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning("name→ticker 맵 DB 조회 실패: %s", e)
+
+    # 2순위: Redis 레지스트리 fallback (DB가 비어 있을 때)
+    if not result:
+        try:
+            from services.cache_service import get_ticker_registry
+            registry = get_ticker_registry() or {}
+            for ticker, meta in registry.items():
+                name = meta.get("name", "")
+                if name:
+                    result[name] = ticker
+            if result:
+                logger.info("name→ticker 맵: Redis fallback으로 %d개 종목 로드", len(result))
+        except Exception as e:
+            logger.warning("Redis fallback 실패: %s", e)
+
+    # _KO_ALIAS 역방향 보강 (예: "NAVER"가 있으면 "네이버" 추가)
+    for en_name, ko_name in _KO_ALIAS.items():
+        if en_name in result:
+            result[ko_name] = result[en_name]
+        elif ko_name in result:
+            result[en_name] = result[ko_name]
+
+    # 키 정규화: 공백 제거 + 소문자 → 조회 일관성 확보
+    normalized = {_normalize_name(k): v for k, v in result.items()}
+    _NAME_TO_TICKER = normalized
+    logger.info("name→ticker 맵 구축 완료: %d개 종목", len(normalized))
+    return normalized
 
 
 # ---------------------------------------------------------------------------
-# 2단계: EXAONE 3.5 문맥 판별
+# 1단계: Ollama 배치 필터 (공통 1회)
+# ---------------------------------------------------------------------------
+
+async def _batch_filter_once(articles: list[Article]) -> Optional[list[int]]:
+    """
+    articles 목록에서 경제/기업/주식시장 관련 기사 인덱스(1-based) 반환.
+
+    반환값:
+      list[int] — 파싱 성공 (빈 배열 포함: 경제 기사가 진짜 없는 경우)
+      None      — 파싱 실패 또는 API 에러 → 호출자가 폴백 처리
+    """
+    titles = "\n".join(f"{i+1}. {a.title}" for i, a in enumerate(articles))
+    prompt = (
+        "당신은 주식 뉴스 필터입니다.\n"
+        "아래 기사 목록에서 기업·산업·주식시장에 관련된 기사의 번호만 반환하세요.\n"
+        "스포츠, 연예, 사건사고, 날씨, 생활정보 등은 제외합니다.\n\n"
+        f"{titles}\n\n"
+        "반환 형식: [1, 3, 7, ...]\n"
+        "다른 텍스트 없이 JSON 배열만 답하세요."
+    )
+
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key="ollama", base_url=_OLLAMA_BASE_URL)
+        response = await client.chat.completions.create(
+            model=_OLLAMA_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=2000,
+        )
+        raw = response.choices[0].message.content.strip()
+        match = re.search(r"\[[\d,\s]*\]", raw)
+        if not match:
+            logger.warning("배치 필터 파싱 실패: %r", raw[:200])
+            return None  # 파싱 실패 → 폴백 트리거
+        indices = [int(x) for x in re.findall(r"\d+", match.group())]
+        return [i for i in indices if 1 <= i <= len(articles)]  # 빈 배열도 유효한 결과
+    except Exception as e:
+        logger.error("배치 필터 Ollama 호출 실패: %s", e)
+        return None  # API 에러 → 폴백 트리거
+
+
+async def batch_filter(articles: list[Article]) -> list[Article]:
+    """
+    전체 기사에서 경제/기업 관련 기사만 추출 (공통 1회 실행).
+    800건 초과 시 자동 분할. Ollama 실패(None) 시 원본 전체 반환 (폴백).
+    정상 빈 배열([]) 시 빈 리스트 반환 — 경제 기사가 진짜 없는 경우.
+    """
+    if not articles:
+        return []
+
+    if len(articles) <= _MAX_BATCH_SIZE:
+        indices = await _batch_filter_once(articles)
+    else:
+        mid = len(articles) // 2
+        ids_1 = await _batch_filter_once(articles[:mid])
+        ids_2 = await _batch_filter_once(articles[mid:])
+        if ids_1 is None or ids_2 is None:
+            indices = None
+        else:
+            indices = ids_1 + [i + mid for i in ids_2]
+
+    if indices is None:
+        # 파싱 실패 / API 에러 → 전체 폴백
+        logger.warning("배치 필터 실패 — %d건 전체 폴백", len(articles))
+        return articles
+
+    if not indices:
+        # 정상 빈 배열 → 경제 관련 기사 없음
+        logger.info("배치 필터: 경제 관련 기사 0건")
+        return []
+
+    filtered = [articles[i - 1] for i in indices]
+    logger.info("1단계 배치 필터: %d → %d건", len(articles), len(filtered))
+    return filtered
+
+
+# ---------------------------------------------------------------------------
+# 2단계: 기사별 종목 매핑
+# ---------------------------------------------------------------------------
+
+async def _map_article_once(article: Article, name_map: dict[str, str]) -> list[str]:
+    """
+    기사 제목/요약 → 직·간접 관련 KOSPI200 ticker 리스트.
+    파싱 실패 또는 Ollama 오류 시 빈 리스트 반환.
+    """
+    prompt = (
+        "당신은 주식 뉴스 분석가입니다.\n\n"
+        "아래 기사가 직접 또는 간접적으로 영향을 미치는\n"
+        "KOSPI200 종목명을 모두 반환하세요.\n\n"
+        f"기사 제목: {article.title}\n"
+        f"기사 요약: {article.summary or '없음'}\n\n"
+        "판단 기준:\n"
+        "- 직접 언급된 기업\n"
+        "- 동일 산업 내 경쟁사/협력사 (예: 반도체 업황 → 삼성전자, SK하이닉스)\n"
+        "- 공급망 상하류 기업 (예: 배터리 소재 → LG에너지솔루션)\n"
+        "- 규제/정책 영향을 받는 기업 (예: 금리 인상 → 은행주)\n\n"
+        "반환 형식: [\"삼성전자\", \"SK하이닉스\", ...]\n"
+        "해당 종목이 없으면: []\n"
+        "다른 텍스트 없이 JSON 배열만 답하세요."
+    )
+
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key="ollama", base_url=_OLLAMA_BASE_URL)
+        response = await client.chat.completions.create(
+            model=_OLLAMA_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=500,
+        )
+        raw = response.choices[0].message.content.strip()
+        match = re.search(r"\[.*?\]", raw, re.DOTALL)
+        if not match:
+            logger.warning("종목 매핑 파싱 실패: %r", raw[:200])
+            return []
+        names: list[str] = json.loads(match.group())
+        tickers = [
+            name_map[_normalize_name(n)]
+            for n in names
+            if _normalize_name(n) in name_map
+        ]
+        return list(dict.fromkeys(tickers))  # 중복 제거, 순서 유지
+    except Exception as e:
+        logger.error("종목 매핑 Ollama 호출 실패 [%s]: %s", article.title[:40], e)
+        return []
+
+
+async def _map_with_semaphore(
+    sem: asyncio.Semaphore,
+    article: Article,
+    name_map: dict[str, str],
+) -> tuple[Article, list[str]]:
+    async with sem:
+        tickers = await _map_article_once(article, name_map)
+        return (article, tickers)
+
+
+async def map_articles_to_tickers(articles: list[Article]) -> dict[str, list[Article]]:
+    """
+    기사 목록 → { ticker: [Article, ...] } 매핑.
+
+    각 기사에 대해 Ollama로 직·간접 관련 종목을 추출한다.
+    병렬 5 (asyncio.Semaphore). name→ticker 변환은 DB companies 테이블 조회.
+    """
+    if not articles:
+        return {}
+
+    name_map = _build_name_to_ticker_map()
+    if not name_map:
+        logger.warning("name→ticker 맵이 비어 있음 — 종목 매핑 불가")
+        return {}
+
+    sem = asyncio.Semaphore(_OLLAMA_CONCURRENCY)
+    tasks = [_map_with_semaphore(sem, a, name_map) for a in articles]
+    pairs = await asyncio.gather(*tasks)
+
+    ticker_map: dict[str, list[Article]] = {}
+    for article, tickers in pairs:
+        for t in tickers:
+            ticker_map.setdefault(t, []).append(article)
+
+    mapped_total = sum(len(v) for v in ticker_map.values())
+    logger.info(
+        "2단계 종목 매핑: %d건 기사 → %d개 종목, 총 %d건 배정",
+        len(articles), len(ticker_map), mapped_total,
+    )
+    return ticker_map
+
+
+# ---------------------------------------------------------------------------
+# 3단계: Ollama 개별 점수
 # ---------------------------------------------------------------------------
 
 @track_agent("relevance_agent", "news_pipeline")
@@ -191,34 +398,23 @@ async def _score_with_semaphore(
 # 퍼블릭 API
 # ---------------------------------------------------------------------------
 
-async def run(ticker: str, articles: list[Article]) -> list[ScoredArticle]:
+async def run(
+    ticker: str,
+    articles: list[Article],
+) -> list[ScoredArticle]:
     """
-    종목 관련 기사 판별 후 4점 이상 기사만 점수 내림차순으로 반환.
+    기사 목록을 Ollama로 0~5점 평가하여 4점 이상만 점수 내림차순으로 반환.
 
-    Args:
-        ticker:   종목코드 (예: "005930")
-        articles: 판별 대상 기사 목록
-
-    Returns:
-        score >= 4인 ScoredArticle 목록 (점수 내림차순)
+    crawl_all_news: 종목별 Naver Finance 기사를 직접 전달
+    crawl_category_news: map_articles_to_tickers() 결과를 전달
     """
     if not articles:
         return []
 
-    company_name, sector = _get_company_info(ticker)
-    keywords = _build_keywords(company_name, sector)
-    logger.info("[%s] %s — 키워드: %s", ticker, company_name, keywords[:5])
+    company_name, _ = _get_company_info(ticker)
 
-    # 1단계: 프리필터
-    candidates = [a for a in articles if _prefilter(a, keywords)]
-    logger.info("1단계 프리필터: %d → %d건", len(articles), len(candidates))
-
-    if not candidates:
-        return []
-
-    # 2단계: Ollama 병렬 스코어링
     sem = asyncio.Semaphore(_OLLAMA_CONCURRENCY)
-    tasks = [_score_with_semaphore(sem, ticker, company_name, a) for a in candidates]
+    tasks = [_score_with_semaphore(sem, ticker, company_name, a) for a in articles]
     scored_pairs = await asyncio.gather(*tasks)
 
     results = [
@@ -228,11 +424,8 @@ async def run(ticker: str, articles: list[Article]) -> list[ScoredArticle]:
     ]
     results.sort(key=lambda x: x.score, reverse=True)
 
-    logger.info(
-        "2단계 Ollama 필터: %d → %d건 (4점 이상)",
-        len(candidates),
-        len(results),
-    )
+    logger.info("[%s] %s — Ollama 점수: %d → %d건 (4점 이상)",
+                ticker, company_name, len(articles), len(results))
     return results
 
 
@@ -242,24 +435,30 @@ async def run(ticker: str, articles: list[Article]) -> list[ScoredArticle]:
 
 if __name__ == "__main__":
     sample = [
-        Article(
-            url="https://example.com/1",
-            title="3분기 반도체 영업이익 대폭 증가",
-            summary="HBM 수요 급증으로 실적 개선",
-        ),
-        Article(
-            url="https://example.com/2",
-            title="국제 유가 하락세 지속",
-            summary="중동 불안 완화로 원유 공급 증가",
-        ),
-        Article(
-            url="https://example.com/3",
-            title="AI 반도체 시장 2030년까지 5배 성장 전망",
-            summary="HBM 경쟁 심화",
-        ),
+        Article(url="https://example.com/1", title="반도체 업황 악화로 HBM 수요 둔화 우려", summary="메모리 재고 증가"),
+        Article(url="https://example.com/2", title="국제 유가 하락세 지속", summary="중동 불안 완화로 원유 공급 증가"),
+        Article(url="https://example.com/3", title="AI 반도체 시장 2030년까지 5배 성장 전망", summary="HBM 경쟁 심화"),
+        Article(url="https://example.com/4", title="프로야구 삼성 라이온즈 홈런더비 우승", summary="스포츠 소식"),
     ]
 
-    results = asyncio.run(run("005930", sample))
-    print(f"\n결과: {len(results)}건")
-    for r in results:
-        print(f"  [{r.score}점] {r.article.title}")
+    async def _test():
+        # 1단계
+        filtered = await batch_filter(sample)
+        print(f"1단계 배치 필터: {len(sample)} → {len(filtered)}건")
+        for a in filtered:
+            print(f"  - {a.title}")
+
+        # 2단계
+        ticker_map = await map_articles_to_tickers(filtered)
+        print(f"\n2단계 종목 매핑: {len(ticker_map)}개 종목")
+        for t, arts in ticker_map.items():
+            print(f"  [{t}] {[a.title[:30] for a in arts]}")
+
+        # 3단계
+        for t, arts in ticker_map.items():
+            results = await run(t, arts)
+            print(f"\n3단계 [{t}]: {len(results)}건 (4점 이상)")
+            for r in results:
+                print(f"  [{r.score}점] {r.article.title}")
+
+    asyncio.run(_test())
