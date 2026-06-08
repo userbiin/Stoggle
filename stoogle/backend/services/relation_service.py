@@ -269,18 +269,8 @@ def compute_relations(
     ticker: str,
     candidate_tickers: Optional[list[str]] = None,
 ) -> dict:
-    """
-    기업 관계 데이터를 반환한다.
-
-    우선순위:
-      1. RelationCache의 발굴 관계 (source=news|dart) — 실제 비즈니스 파트너
-      2. RelationCache의 correlation 캐시 — 보완적으로 추가
-      3. 캐시 없을 때 Live Pearson 상관계수 (KOSPI200 상위 9개 폴백)
-
-    발굴 관계가 있으면 correlation 기반 항목은 빈 슬롯 채우기 용도로만 사용한다.
-    """
+    """비즈니스 관계사 = 발굴 관계(news|dart) ∪ company_edges 이웃. correlation은 절대 사용 안 함."""
     from services.stock_service import get_or_build_registry
-    from services.kospi200 import KOSPI200_TICKERS
 
     registry = get_or_build_registry()
     center_name = _get_name(ticker, registry)
@@ -289,134 +279,37 @@ def compute_relations(
     related: list[RelatedCompany] = []
 
     cached = _load_relation_cache(ticker)
-    discovered = [r for r in cached if r["source"] != "correlation"]
-    corr_cached = [r for r in cached if r["source"] == "correlation"]
+    # correlation 소스는 비즈니스 관계사에서 제외
+    candidates = [r for r in cached if r["source"] != "correlation"]
 
-    if discovered:
-        # ── 발굴된 관계 우선 사용 ────────────────────────────────────────────
-        primary = discovered[:9]
-        for i, item in enumerate(primary):
-            cand = item["ticker"]
-            cand_name = _get_name(cand, registry)
-            size = max(10, 30 - i * 2)
-            nodes.append(RelationNode(id=cand, name=cand_name, group=i % 3 + 1, size=size))
-            links.append(
-                RelationLink(source=ticker, target=cand, value=item["correlation"], type=item["relation_type"])
-            )
-            related.append(
-                RelatedCompany(
-                    ticker=cand,
-                    name=cand_name,
-                    correlation=item["correlation"],
-                    relation_type=item.get("relation_type", "관심"),
-                    reason=item["reason"],
-                )
-            )
-
-        # 빈 슬롯은 correlation 캐시로 보완
-        existing_tickers = {r["ticker"] for r in primary}
-        for i, item in enumerate(corr_cached, start=len(primary)):
-            if len(nodes) >= 10:
-                break
-            cand = item["ticker"]
-            if cand in existing_tickers:
+    # 부족하면 company_edges 그래프 이웃으로 보강 (Pearson 폴백 없음)
+    if len(candidates) < 9:
+        seen = {c["ticker"] for c in candidates}
+        for n in _get_neighbors_from_edges(ticker):
+            if n["ticker"] in seen or n["ticker"] == ticker:
                 continue
-            cand_name = _get_name(cand, registry)
-            size = max(10, 18 - i * 2)
-            nodes.append(RelationNode(id=cand, name=cand_name, group=i % 3 + 1, size=size))
-            links.append(
-                RelationLink(source=ticker, target=cand, value=item["correlation"], type=item["relation_type"])
-            )
-            related.append(
-                RelatedCompany(
-                    ticker=cand,
-                    name=cand_name,
-                    correlation=item["correlation"],
-                    relation_type=item.get("relation_type", "관심"),
-                    reason=item["reason"],
-                )
-            )
-            existing_tickers.add(cand)
+            candidates.append(n)
+            seen.add(n["ticker"])
+            if len(candidates) >= 9:
+                break
 
-    elif corr_cached:
-        # ── correlation 캐시만 있는 경우 ────────────────────────────────────
-        for i, item in enumerate(corr_cached[:9]):
-            cand = item["ticker"]
-            cand_name = _get_name(cand, registry)
-            size = max(10, 28 - i * 2)
-            nodes.append(RelationNode(id=cand, name=cand_name, group=i % 3 + 1, size=size))
-            links.append(
-                RelationLink(source=ticker, target=cand, value=item["correlation"], type=item["relation_type"])
-            )
-            related.append(
-                RelatedCompany(
-                    ticker=cand,
-                    name=cand_name,
-                    correlation=item["correlation"],
-                    relation_type=item.get("relation_type", "관심"),
-                    reason=item["reason"],
-                )
-            )
-
-    else:
-        # ── 캐시 없음 → company_edges 1~2홉 탐색 → KOSPI200 폴백 ─────────
-        graph_neighbors = _get_neighbors_from_edges(ticker)
-
-        if graph_neighbors:
-            # 사업 관계 그래프 이웃 사용 (비대형주 포함)
-            for i, item in enumerate(graph_neighbors[:9]):
-                cand = item["ticker"]
-                cand_name = _get_name(cand, registry)
-                size = max(10, 28 - i * 2)
-                nodes.append(RelationNode(id=cand, name=cand_name, group=i % 3 + 1, size=size))
-                links.append(
-                    RelationLink(source=ticker, target=cand, value=item["correlation"], type=item["relation_type"])
-                )
-                related.append(
-                    RelatedCompany(
-                        ticker=cand,
-                        name=cand_name,
-                        correlation=item["correlation"],
-                        relation_type=item.get("relation_type", "관심"),
-                        reason=item["reason"],
-                    )
-                )
-        else:
-            # company_edges에 데이터 없으면 KOSPI200 Pearson 폴백
-            logger.info("[%s] company_edges 이웃 없음 — KOSPI200 상관계수 폴백", ticker)
-            if candidate_tickers is None:
-                candidate_tickers = [t for t in KOSPI200_TICKERS if t != ticker][:9]
-
-            base_series = _fetch_close_series(ticker)
-            for i, cand in enumerate(candidate_tickers):
-                if cand == ticker:
-                    continue
-                cand_name = _get_name(cand, registry)
-                size = max(10, 28 - i * 2)
-                cand_series = _fetch_close_series(cand)
-                corr = _pearson_corr(base_series, cand_series)
-                if corr is None:
-                    logger.info("상관계수 계산 제외 (%s-%s): 데이터 부족", ticker, cand)
-                    continue
-                corr = round(corr, 2)
-                nodes.append(RelationNode(id=cand, name=cand_name, group=i % 3 + 1, size=size))
-                links.append(RelationLink(source=ticker, target=cand, value=corr, type="관심"))
-                related.append(
-                    RelatedCompany(
-                        ticker=cand,
-                        name=cand_name,
-                        correlation=corr,
-                        relation_type="관심",
-                        reason="",
-                    )
-                )
+    # 둘 다 없으면 빈 목록 → 라우터 게이트와 일관되게 "없으면 없다"
+    for i, item in enumerate(candidates[:9]):
+        cand = item["ticker"]
+        cand_name = _get_name(cand, registry)
+        size = max(10, 30 - i * 2)
+        nodes.append(RelationNode(id=cand, name=cand_name, group=i % 3 + 1, size=size))
+        links.append(RelationLink(
+            source=ticker, target=cand,
+            value=item.get("correlation", 0.0), type=item["relation_type"],
+        ))
+        related.append(RelatedCompany(
+            ticker=cand, name=cand_name,
+            correlation=item.get("correlation", 0.0), reason=item["reason"],
+        ))
 
     related.sort(key=lambda x: x.correlation, reverse=True)
-    return {
-        "nodes": nodes,
-        "links": links,
-        "related_companies": related[:5],
-    }
+    return {"nodes": nodes, "links": links, "related_companies": related[:5]}
 
 
 def _get_neighbors_from_edges(

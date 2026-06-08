@@ -226,13 +226,30 @@ def build_ticker_registry() -> dict:
 
     # get_market_ticker_list 가 빈 결과를 반환하는 환경(KRX API 제한 등)에 대한 fallback
     if not registry:
-        logger.warning("전종목 리스트 조회 불가 — KOSPI200 fallback으로 레지스트리 구축")
-        from services.kospi200 import KOSPI200_FALLBACK as _KOSPI200_FALLBACK
-        for ticker in _KOSPI200_FALLBACK:
-            name = _get_ticker_name(ticker)
-            registry[ticker] = {"ticker": ticker, "name": name, "market": "KOSPI", "sector": ""}
+        # KOSPI200 30종목 fallback은 발굴 종목코드 해석에 부족 → ticker_map.json seed 우선
+        import json, os
+        seed_path = os.getenv("TICKER_MAP_PATH", "ticker_map.json")
+        try:
+            with open(seed_path, encoding="utf-8") as f:
+                seed = json.load(f)
+            for k, v in seed.items():
+                if isinstance(v, dict):          # {"005930": {"name": "삼성전자", ...}}
+                    tk = v.get("ticker") or k
+                    registry[tk] = {"ticker": tk, "name": v.get("name", tk),
+                                    "market": v.get("market", "KOSPI"),
+                                    "sector": v.get("sector", "")}
+                else:                            # {"삼성전자": "005930"}
+                    tk = str(v).zfill(6)
+                    registry[tk] = {"ticker": tk, "name": k,
+                                    "market": "KOSPI", "sector": ""}
+            logger.warning("ticker_map.json seed로 레지스트리 구축: %d종목", len(registry))
+        except Exception as e:
+            logger.warning("ticker_map.json 로드 실패 — KOSPI200 fallback: %s", e)
+            from services.kospi200 import KOSPI200_FALLBACK as _f
+            for tk in _f:
+                registry[tk] = {"ticker": tk, "name": _get_ticker_name(tk),
+                                "market": "KOSPI", "sector": ""}
 
-    logger.info(f"종목 레지스트리 구축 완료: {len(registry)}종목")
     return registry
 
 

@@ -103,7 +103,7 @@ pydantic==2.13.4
 pydantic-settings==2.14.1
 pydantic_core==2.46.4
 Pygments==2.20.0
-pykrx==1.0.46
+pykrx==1.2.8
 pyparsing==3.3.2
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
