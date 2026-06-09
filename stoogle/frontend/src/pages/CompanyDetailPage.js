@@ -8,6 +8,7 @@ import NewsSection from '../components/NewsSection';
 import RelationGraph from '../components/RelationGraph';
 import RelationList from '../components/RelationList';
 import ImpactList from '../components/ImpactList';
+import AnalysisImpacts from '../components/AnalysisImpacts';
 
 const USE_MOCK = process.env.REACT_APP_USE_MOCK !== 'false';
 
@@ -214,8 +215,11 @@ export default function CompanyDetailPage() {
           </div>
         )}
 
-        {/* 뉴스 기반 주가 영향 예상 종목 */}
+        {/* 관계사 기반 영향 종목 */}
         <ImpactList items={impact} />
+
+        {/* AI 뉴스 분석 기반 영향 예측 종목 */}
+        <AnalysisImpacts items={insight.analysis_impacts || []} />
 
       </div>
     </div>

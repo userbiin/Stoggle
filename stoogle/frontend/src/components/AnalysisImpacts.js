@@ -53,6 +53,11 @@ const styles = {
     fontWeight: '400',
     opacity: 0.7,
   },
+  chipConfidence: {
+    fontSize: '10px',
+    fontWeight: '400',
+    opacity: 0.55,
+  },
   divider: {
     borderTop: '1px solid var(--color-border)',
     marginBottom: '16px',
@@ -90,61 +95,61 @@ const styles = {
 };
 
 function buildInsightText(items) {
-  const pos = items.filter((i) => i.impact === 'positive');
-  const neg = items.filter((i) => i.impact === 'negative');
+  const up = items.filter((i) => i.direction === 'up');
+  const down = items.filter((i) => i.direction === 'down');
   const parts = [];
-
-  if (pos.length) {
-    const names = pos.map((i) => i.name).join('·');
-    const reasons = pos.map((i) => i.reason).join(' 또한 ');
+  if (up.length) {
+    const names = up.map((i) => i.name).join('·');
+    const reasons = up.map((i) => i.reason).join(' 또한 ');
     parts.push(`${names}는 ${reasons}`);
   }
-  if (neg.length) {
-    const names = neg.map((i) => i.name).join('·');
-    const reasons = neg.map((i) => i.reason).join(' 또한 ');
-    const connector = pos.length ? ' 반면 ' : '';
+  if (down.length) {
+    const names = down.map((i) => i.name).join('·');
+    const reasons = down.map((i) => i.reason).join(' 또한 ');
+    const connector = up.length ? ' 반면 ' : '';
     parts.push(`${connector}${names}는 ${reasons}`);
   }
-
   return parts.join('. ') + (parts.length ? '.' : '');
 }
 
-export default function ImpactList({ items = [] }) {
+export default function AnalysisImpacts({ items = [] }) {
   const navigate = useNavigate();
-
-  const insightText = buildInsightText(items);
+  const filtered = items.filter((i) => i.direction !== 'neutral');
 
   return (
     <div style={styles.card}>
       <div style={styles.header}>
-        <span style={styles.title}>뉴스로 주가 변동 가능성 있는 종목</span>
-        <span style={styles.subtitle}>관계사 기반 영향 분석</span>
+        <span style={styles.title}>AI 영향 예측 종목</span>
+        <span style={styles.subtitle}>최근 뉴스 분석 기반 자동 예측</span>
       </div>
 
-      {items.length === 0 ? (
-        <div style={styles.emptyState}>크게 변동 가능성 있는 종목이 없습니다</div>
+      {filtered.length === 0 ? (
+        <div style={styles.emptyState}>현재 뉴스 기반 영향 예측 종목이 없습니다</div>
       ) : (
         <>
           <div style={styles.chipRow}>
-            {items.map((item) => {
-              const isPos = item.impact === 'positive';
+            {filtered.map((item) => {
+              const isUp = item.direction === 'up';
               return (
                 <span
                   key={item.ticker}
                   style={{
                     ...styles.chip,
-                    background: isPos ? 'var(--color-positive-bg)' : 'var(--color-negative-bg)',
-                    color: isPos ? 'var(--color-positive)' : 'var(--color-negative)',
-                    borderColor: isPos ? '#a8d5b5' : '#f5b7b5',
+                    background: isUp ? 'var(--color-positive-bg)' : 'var(--color-negative-bg)',
+                    color: isUp ? 'var(--color-positive)' : 'var(--color-negative)',
+                    borderColor: isUp ? '#a8d5b5' : '#f5b7b5',
                   }}
                   onClick={() => navigate(`/company/${item.ticker}`)}
                   onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.75')}
                   onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
                   title={item.reason}
                 >
-                  <span style={styles.chipArrow}>{isPos ? '▲' : '▼'}</span>
+                  <span style={styles.chipArrow}>{isUp ? '▲' : '▼'}</span>
                   {item.name}
                   <span style={styles.chipTicker}>{item.ticker}</span>
+                  <span style={styles.chipConfidence}>
+                    {Math.round((item.confidence ?? 0) * 100)}%
+                  </span>
                 </span>
               );
             })}
@@ -156,7 +161,7 @@ export default function ImpactList({ items = [] }) {
             <div style={styles.insightHeader}>
               <span style={styles.insightLabel}>AI 인사이트</span>
             </div>
-            <div style={styles.insightText}>{insightText}</div>
+            <div style={styles.insightText}>{buildInsightText(filtered)}</div>
           </div>
         </>
       )}

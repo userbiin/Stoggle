@@ -573,6 +573,11 @@ def crawl_all_news(self):
     if updated_tickers:
         _trigger_incremental_relation_update.delay(updated_tickers)
 
+    # 신규 뉴스가 있는 종목에 대해 analysis_agent 분석 트리거
+    # 뉴스는 이미 Redis에 캐싱됐으므로 재크롤 없이 LLM 분석만 실행됨
+    for ticker in updated_tickers:
+        analyze_single_ticker.delay(ticker)
+
     return {"status": "ok", "crawled": results}
 
 

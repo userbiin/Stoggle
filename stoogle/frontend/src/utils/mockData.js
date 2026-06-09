@@ -33,21 +33,12 @@ export const mockInsight = {
   eps: 5099,
   summary:
     "삼성전자는 HBM3E 공급 확대 및 파운드리 수율 개선으로 2분기 실적 반등이 기대됩니다. AI 서버 수요 증가로 메모리 부문 수익성이 크게 개선될 전망이며, 파운드리는 GAA 2nm 공정 양산을 앞두고 있습니다.",
-  keywords: [
-    { text: "HBM", value: 80 },
-    { text: "파운드리", value: 65 },
-    { text: "AI 반도체", value: 60 },
-    { text: "메모리", value: 55 },
-    { text: "GAA", value: 48 },
-    { text: "엔비디아", value: 45 },
-    { text: "2nm", value: 40 },
-    { text: "수율", value: 38 },
-    { text: "DDR5", value: 32 },
-    { text: "스마트폰", value: 28 },
-    { text: "갤럭시", value: 25 },
-    { text: "하이닉스", value: 22 },
-  ],
   price_history: generatePriceHistory(72400, 60),
+  analysis_impacts: [
+    { ticker: "000660", name: "SK하이닉스", direction: "up", reason: "HBM3E 공급 경쟁 심화로 SK하이닉스 프리미엄 HBM 단가 협상력 강화", confidence: 0.78 },
+    { ticker: "009150", name: "삼성전기", direction: "up", reason: "HBM 수주 확대에 따른 MLCC·카메라모듈 동반 수주 기대", confidence: 0.65 },
+    { ticker: "086520", name: "에코프로", direction: "down", reason: "IT·반도체 섹터로 기관 자금 집중 시 배터리주 단기 수급 약화 우려", confidence: 0.52 },
+  ],
 };
 
 export const mockNews = [

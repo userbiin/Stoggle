@@ -140,7 +140,7 @@ export default function MainPage() {
         ))}
       </div>
 
-      <p style={styles.footer}>mock 데이터로 동작 중 · 백엔드 연결 시 실시간 데이터 제공</p>
+
     </div>
   );
 }
