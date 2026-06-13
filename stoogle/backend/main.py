@@ -1,6 +1,7 @@
+# FastAPI 앱
 import os
 from dotenv import load_dotenv
-load_dotenv()  # pykrx 임포트 전에 환경 변수 로드 (기본 인자 평가 타이밍 문제 방지)
+load_dotenv()
 
 import time
 import logging
@@ -17,7 +18,6 @@ setup_logging()
 
 logger = logging.getLogger("stoogle.http")
 
-# ── Sentry (에러 트래킹) ────────────────────────────────────────────────────
 _sentry_dsn = os.getenv("SENTRY_DSN")
 if _sentry_dsn:
     import sentry_sdk
@@ -33,7 +33,6 @@ if _sentry_dsn:
             CeleryIntegration(),
             SqlalchemyIntegration(),
         ],
-        # 10% 요청 샘플링 — 트레이스 비용 절감
         traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
     )
 
@@ -58,6 +57,7 @@ app.add_middleware(
 )
 
 
+# HTTP 로깅
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     start = time.time()
@@ -78,25 +78,28 @@ app.include_router(news.router, prefix="/api/v1")
 app.include_router(relations.router, prefix="/api/v1")
 app.include_router(metrics_router)
 
-# ── Prometheus 메트릭 (/metrics 엔드포인트 자동 노출) ─────────────────────
 from prometheus_fastapi_instrumentator import Instrumentator  # noqa: E402
 Instrumentator().instrument(app).expose(app)
 
 
+# 파비콘
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     return Response(status_code=200)
 
 
+# 헬스체크
 @app.get("/health", tags=["health"])
 async def health_check():
     return {"status": "ok", "version": "0.1.0"}
 
 
+# Ollama 요청
 class OllamaAskRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
 
 
+# Ollama 헬스
 @app.get("/ollama/health")
 async def ollama_health():
     return {
@@ -106,6 +109,7 @@ async def ollama_health():
     }
 
 
+# Ollama 프록시
 @app.post("/ollama/ask")
 async def ollama_ask(req: OllamaAskRequest):
     payload = {

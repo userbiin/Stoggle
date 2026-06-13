@@ -1,19 +1,4 @@
-"""
-OpenDART 공시·재무제표 수집 → 섹션 청크 분할 → pgvector 색인
-
-입력 : 종목코드 (string)
-출력 : 색인된 청크 수 (int)
-
-데이터 소스
-  - corpCode.xml   : stock_code → corp_code 매핑 (최초 1회 다운로드 후 캐시)
-  - list.json      : 최근 정기공시 목록 (사업/반기/분기 보고서)
-  - fnlttSinglAcnt.json : 재무제표 (재무상태표·손익계산서·현금흐름표)
-
-청크 분할
-  - 섹션(재무제표 종류) 단위로 줄 병합
-  - tiktoken cl100k_base 기준 최대 400 토큰
-  - 하나의 줄이 400 토큰 초과 시 강제 분할
-"""
+# DART 색인기
 from __future__ import annotations
 
 import asyncio
@@ -38,7 +23,6 @@ EMBED_MODEL = "voyage-3"
 EMBED_BATCH_SIZE = 32
 MAX_TOKENS = 400
 
-# 정기공시 보고서 코드
 _REPRT_CODES = {
     "11011": "사업보고서",
     "11012": "반기보고서",
@@ -46,14 +30,12 @@ _REPRT_CODES = {
     "11014": "3분기보고서",
 }
 
-# ---------------------------------------------------------------------------
-# corp_code 캐시 (프로세스 내 1회 로드)
-# ---------------------------------------------------------------------------
-
-_CORP_CODE_MAP: dict[str, str] = {}   # stock_code → corp_code
+# corp_code 캐시
+_CORP_CODE_MAP: dict[str, str] = {}
 _CORP_CODE_LOCK: Optional[asyncio.Lock] = None
 
 
+# 락 초기화
 def _get_lock() -> asyncio.Lock:
     global _CORP_CODE_LOCK
     if _CORP_CODE_LOCK is None:
@@ -61,13 +43,13 @@ def _get_lock() -> asyncio.Lock:
     return _CORP_CODE_LOCK
 
 
+# corp_code 로드
 async def _load_corp_codes(api_key: str) -> None:
-    """DART corpCode.xml 다운로드 후 stock_code → corp_code 매핑 캐시."""
     if _CORP_CODE_MAP:
         return
 
     async with _get_lock():
-        if _CORP_CODE_MAP:   # double-check after lock
+        if _CORP_CODE_MAP:
             return
 
         url = f"{DART_BASE}/corpCode.xml"
@@ -96,6 +78,7 @@ async def _load_corp_codes(api_key: str) -> None:
             logger.error("corpCode.xml 파싱 실패: %s", e)
 
 
+# corp_code 조회
 async def _get_corp_code(ticker: str, api_key: str) -> Optional[str]:
     await _load_corp_codes(api_key)
     code = _CORP_CODE_MAP.get(ticker)
@@ -104,18 +87,14 @@ async def _get_corp_code(ticker: str, api_key: str) -> Optional[str]:
     return code
 
 
-# ---------------------------------------------------------------------------
-# DART API 호출
-# ---------------------------------------------------------------------------
-
+# 공시 목록 조회
 async def _fetch_disclosure_list(corp_code: str, api_key: str) -> list[dict]:
-    """최근 1년 정기공시 목록 조회."""
     bgn_de = (datetime.today() - timedelta(days=365)).strftime("%Y%m%d")
     params = {
         "crtfc_key": api_key,
         "corp_code": corp_code,
         "bgn_de": bgn_de,
-        "pblntf_ty": "A",    # 정기공시
+        "pblntf_ty": "A",
         "page_count": 20,
     }
     try:
@@ -132,14 +111,14 @@ async def _fetch_disclosure_list(corp_code: str, api_key: str) -> list[dict]:
         return []
 
 
+# 재무제표 조회
 async def _fetch_financial_statement(
     corp_code: str,
     bsns_year: str,
     reprt_code: str,
     api_key: str,
 ) -> list[dict]:
-    """재무제표 단일회사 조회 (개별·연결 모두 시도)."""
-    for fs_div in ("CFS", "OFS"):   # 연결 우선, 개별 fallback
+    for fs_div in ("CFS", "OFS"):
         params = {
             "crtfc_key": api_key,
             "corp_code": corp_code,
@@ -159,25 +138,18 @@ async def _fetch_financial_statement(
     return []
 
 
-# 특수관계자 거래 조회 대상 계정과목 패턴
 _RELATED_PARTY_ACCT = re.compile(
     r"특수관계자|관계회사|계열사|종속회사|관련회사", re.IGNORECASE
 )
 
 
+# 특수관계자 섹션 조회
 async def _fetch_related_party_section(
     corp_code: str,
     bsns_year: str,
     reprt_code: str,
     api_key: str,
 ) -> list[tuple[str, str]]:
-    """
-    재무제표 전체 항목 중 특수관계자 거래 관련 계정과목을 필터링해
-    (section_title, content) 리스트로 반환한다.
-
-    fnlttSinglAcntAll.json (전체 계정과목 조회)을 사용하며
-    특수관계자/계열사 관련 항목만 섹션으로 구성한다.
-    """
     for fs_div in ("CFS", "OFS"):
         params = {
             "crtfc_key": api_key,
@@ -195,7 +167,6 @@ async def _fetch_related_party_section(
             if not items:
                 continue
 
-            # 특수관계자 관련 계정만 필터
             related = [
                 item for item in items
                 if _RELATED_PARTY_ACCT.search(item.get("account_nm", ""))
@@ -204,7 +175,6 @@ async def _fetch_related_party_section(
             if not related:
                 continue
 
-            # 그룹별 섹션 텍스트 구성
             sections = []
             by_sj: dict[str, list[str]] = {}
             for item in related:
@@ -232,15 +202,8 @@ async def _fetch_related_party_section(
 
 
 
-# ---------------------------------------------------------------------------
-# 섹션 텍스트 구성
-# ---------------------------------------------------------------------------
-
+# 재무 섹션 구성
 def _format_financial_section(items: list[dict], report_label: str) -> list[tuple[str, str]]:
-    """
-    재무제표 JSON 항목들 → (section_title, content) 목록.
-    sj_nm(재무제표 종류)별로 그룹핑.
-    """
     groups: dict[str, list[str]] = {}
     term_name = ""
 
@@ -267,8 +230,8 @@ def _format_financial_section(items: list[dict], report_label: str) -> list[tupl
     return sections
 
 
+# 공시 목록 섹션
 def _format_disclosure_section(disclosures: list[dict]) -> tuple[str, str]:
-    """공시 목록 → 단일 메타 섹션."""
     title = "[공시 목록] 최근 1년 정기공시"
     lines = [title]
     for d in disclosures:
@@ -279,18 +242,10 @@ def _format_disclosure_section(disclosures: list[dict]) -> tuple[str, str]:
     return title, "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
-# 청크 분할 (tiktoken)
-# ---------------------------------------------------------------------------
-
+# 청크 분할
 def _chunk_section(content: str, max_tokens: int = MAX_TOKENS) -> list[tuple[str, int]]:
-    """
-    섹션 텍스트를 줄 단위로 병합해 max_tokens 이하 청크 생성.
-    Returns: List of (chunk_text, token_count)
-    """
     import tiktoken
     enc = tiktoken.get_encoding("cl100k_base")
-
     lines = [l for l in content.split("\n") if l.strip()]
     chunks: list[tuple[str, int]] = []
     buf: list[str] = []
@@ -299,7 +254,6 @@ def _chunk_section(content: str, max_tokens: int = MAX_TOKENS) -> list[tuple[str
     for line in lines:
         line_tok = len(enc.encode(line))
 
-        # 단일 줄이 max_tokens 초과 → 강제 분할
         if line_tok > max_tokens:
             if buf:
                 chunks.append(("\n".join(buf), buf_tokens))
@@ -323,12 +277,8 @@ def _chunk_section(content: str, max_tokens: int = MAX_TOKENS) -> list[tuple[str
     return chunks
 
 
-# ---------------------------------------------------------------------------
-# 임베딩
-# ---------------------------------------------------------------------------
-
+# 임베딩 배치
 async def _embed_batch(texts: list[str]) -> list[list[float]]:
-    """VOYAGE_API_KEY 미설정 시 빈 리스트 반환 (pgvector 색인 건너뜀)."""
     api_key = os.getenv("VOYAGE_API_KEY")
     if not api_key:
         return []
@@ -341,49 +291,33 @@ async def _embed_batch(texts: list[str]) -> list[list[float]]:
     for i in range(0, len(texts), EMBED_BATCH_SIZE):
         batch = texts[i : i + EMBED_BATCH_SIZE]
         if i > 0:
-            await _asyncio.sleep(21)   # 무료 3 RPM → 배치 간 21초 대기
+            await _asyncio.sleep(21)
         result = await client.embed(batch, model=EMBED_MODEL)
         embeddings.extend(result.embeddings)
     return embeddings
 
 
-# ---------------------------------------------------------------------------
 # 수집 기간 결정
-# ---------------------------------------------------------------------------
-
 def _target_periods() -> list[tuple[str, str]]:
-    """
-    현재 날짜 기준으로 수집할 (bsns_year, reprt_code) 목록 반환.
-    최근 2개 연도 연간 + 현 연도 분기 포함.
-    """
     now = datetime.today()
     year, month = now.year, now.month
 
     periods = [
-        (str(year - 1), "11011"),   # 전년도 사업보고서
-        (str(year - 2), "11011"),   # 전전년도 사업보고서
+        (str(year - 1), "11011"),
+        (str(year - 2), "11011"),
     ]
     if month >= 5:
-        periods.append((str(year), "11013"))   # 1분기
+        periods.append((str(year), "11013"))
     if month >= 8:
-        periods.append((str(year), "11012"))   # 반기
+        periods.append((str(year), "11012"))
     if month >= 11:
-        periods.append((str(year), "11014"))   # 3분기
+        periods.append((str(year), "11014"))
 
     return periods
 
 
-# ---------------------------------------------------------------------------
-# 퍼블릭 API
-# ---------------------------------------------------------------------------
-
+# 색인 실행
 async def run(ticker: str) -> int:
-    """
-    종목코드의 공시·재무제표를 수집해 dart_chunks 테이블에 색인.
-
-    Returns:
-        색인된 청크 수 (이미 색인된 항목 제외)
-    """
     api_key = os.getenv("DART_API_KEY")
     if not api_key:
         raise RuntimeError("DART_API_KEY가 설정되지 않았습니다.")
@@ -401,24 +335,19 @@ async def run(ticker: str) -> int:
 
     db = SessionLocal()
     try:
-        # 이미 색인된 접수번호 조회
         indexed_rcept = {
             row[0]
             for row in db.query(DartChunk.rcept_no).filter(DartChunk.ticker == ticker).all()
         }
 
-        # 2. 공시 목록 조회
         disclosures = await _fetch_disclosure_list(corp_code, api_key)
 
-        # 수집할 섹션 목록: (rcept_no, section_title, content)
         raw_sections: list[tuple[str, str, str]] = []
 
-        # 공시 목록 메타 섹션 (항상 갱신)
         if disclosures:
             disc_title, disc_content = _format_disclosure_section(disclosures)
             raw_sections.append(("META", disc_title, disc_content))
 
-        # 3. 재무제표 + 특수관계자 거래 수집 (기간별)
         for bsns_year, reprt_code in _target_periods():
             report_label = f"{bsns_year}년 {_REPRT_CODES.get(reprt_code, reprt_code)}"
             pseudo_rcept = f"{bsns_year}_{reprt_code}"
@@ -426,7 +355,6 @@ async def run(ticker: str) -> int:
                 logger.debug("[%s] 이미 색인됨: %s", ticker, report_label)
                 continue
 
-            # 재무제표 수치 + 특수관계자 거래 섹션 병렬 조회
             fin_items, related_sections = await asyncio.gather(
                 _fetch_financial_statement(corp_code, bsns_year, reprt_code, api_key),
                 _fetch_related_party_section(corp_code, bsns_year, reprt_code, api_key),
@@ -436,7 +364,6 @@ async def run(ticker: str) -> int:
                 for title, content in _format_financial_section(fin_items, report_label):
                     raw_sections.append((pseudo_rcept, title, content))
 
-            # 특수관계자 거래 섹션 — 관계 발굴 에이전트가 탐색할 수 있도록 DartChunk 저장
             for title, content in related_sections:
                 raw_sections.append((f"{pseudo_rcept}_related", title, content))
 
@@ -444,21 +371,18 @@ async def run(ticker: str) -> int:
             logger.info("[%s] 새로 색인할 데이터 없음", ticker)
             return 0
 
-        # 4. 청크 분할
-        flat_chunks: list[tuple[str, str, str, int]] = []   # (rcept_no, title, text, tokens)
+        flat_chunks: list[tuple[str, str, str, int]] = []
         for rcept_no, section_title, content in raw_sections:
             for idx, (chunk_text, token_count) in enumerate(_chunk_section(content)):
                 chunk_title = f"{section_title}[{idx}]" if idx > 0 else section_title
                 flat_chunks.append((rcept_no, chunk_title, chunk_text, token_count))
 
-        # 5. 임베딩
         try:
             embeddings = await _embed_batch([c[2] for c in flat_chunks])
         except Exception as e:
             logger.error("[%s] 임베딩 실패: %s", ticker, e)
             return 0
 
-        # 6. DB 저장
         rows = [
             DartChunk(
                 ticker=ticker,
@@ -486,10 +410,6 @@ async def run(ticker: str) -> int:
     finally:
         db.close()
 
-
-# ---------------------------------------------------------------------------
-# 직접 실행 (테스트)
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import sys

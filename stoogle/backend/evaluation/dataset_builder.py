@@ -1,10 +1,4 @@
-"""
-백테스트 평가 데이터셋 빌더
-
-KOSPI50 종목 × 과거 기간 거래일에서 (ticker, as_of) 쌍을 무작위 추출한다.
-시장 편향 방지를 위해 랜덤 시드를 고정하여 재현성을 보장한다.
-시점 시각은 09:00 KST — 장 시작 직전 기준으로 pre-market 뉴스만 포함.
-"""
+# 데이터셋 빌더
 from __future__ import annotations
 
 import logging
@@ -13,10 +7,8 @@ from datetime import date, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-# KOSPI50 pykrx 인덱스 코드 (2024년 기준)
 _KOSPI50_INDEX = "1028"
 
-# pykrx 실패 시 fallback — KOSPI 대형주 30종
 _FALLBACK_TICKERS = [
     "005930", "000660", "035420", "005380", "051910",
     "006400", "035720", "207940", "068270", "105560",
@@ -27,6 +19,7 @@ _FALLBACK_TICKERS = [
 ]
 
 
+# KOSPI50 종목
 def get_kospi50_tickers() -> list[str]:
     try:
         from pykrx import stock
@@ -39,11 +32,8 @@ def get_kospi50_tickers() -> list[str]:
     return _FALLBACK_TICKERS
 
 
+# 거래일 목록
 def get_trading_days(fromdate: str, todate: str) -> list[str]:
-    """
-    두 날짜 사이의 거래일 목록 반환 (YYYY-MM-DD).
-    pykrx 실패 시 주말 제외 캘린더 날짜로 대체 (공휴일 불포함 — 허용 오차).
-    """
     try:
         from pykrx import stock
         days = stock.get_previous_business_days(fromdate=fromdate, todate=todate)
@@ -54,18 +44,18 @@ def get_trading_days(fromdate: str, todate: str) -> list[str]:
     except Exception as e:
         logger.warning("거래일 조회 실패, 주말 제외 날짜 사용: %s", e)
 
-    # fallback: 주말 제외
     start = datetime.strptime(fromdate, "%Y%m%d")
     end = datetime.strptime(todate, "%Y%m%d")
     days = []
     cur = start
     while cur <= end:
-        if cur.weekday() < 5:  # 월~금
+        if cur.weekday() < 5:
             days.append(cur.strftime("%Y-%m-%d"))
         cur += timedelta(days=1)
     return days
 
 
+# 데이터셋 빌드
 def build_dataset(
     start: str = "20260301",
     end: str = "20260430",
@@ -73,21 +63,6 @@ def build_dataset(
     seed: int = 42,
     safety_days: int = 5,
 ) -> list[dict]:
-    """
-    과거 기간에서 (ticker, as_of) 트리플을 n_samples개 무작위 추출.
-
-    Parameters
-    ----------
-    start, end   : YYYYMMDD 형식
-    n_samples    : 추출 수
-    seed         : 재현성용 랜덤 시드
-    safety_days  : as_of <= today - safety_days 강제 (D+3 즉시 채점 보장).
-                   0이면 제약 없음 (라이브/대기 모드).
-
-    Returns
-    -------
-    list of {"ticker": str, "as_of": datetime, "date_str": str}
-    """
     random.seed(seed)
     tickers = get_kospi50_tickers()
     trading_days = get_trading_days(start, end)
@@ -97,7 +72,6 @@ def build_dataset(
     if not trading_days:
         raise RuntimeError(f"거래일 목록이 없습니다 ({start}~{end}).")
 
-    # 즉시 채점 가능 날짜만 필터 (D+3가 이미 경과한 것만)
     if safety_days > 0:
         cutoff = date.today() - timedelta(days=safety_days)
         trading_days = [
@@ -137,25 +111,21 @@ def build_dataset(
         if key in seen:
             continue
         seen.add(key)
-        # 장 시작 직전(09:00) 기준 — safety_days가 D+3 경과를 보장
         as_of = datetime.strptime(day_str, "%Y-%m-%d").replace(hour=9, minute=0, second=0)
         samples.append({"ticker": ticker, "as_of": as_of, "date_str": day_str})
 
     logger.info("데이터셋 빌드 완료: %d 샘플 (시도 %d회)", len(samples), attempts)
     return samples
 
-# evaluation/dataset_builder.py — 추가 함수
+
+# DB기반 데이터셋
 def build_dataset_from_db(
-    start: str,           # YYYY-MM-DD
-    end: str,             # YYYY-MM-DD
+    start: str,
+    end: str,
     n_samples: int = 300,
     seed: int = 42,
     safety_days: int = 3,
 ) -> list[dict]:
-    """
-    DB의 NewsCache에 실제 뉴스가 있는 (ticker, date) 페어에서만 추출.
-    fallback 매칭 실패로 인한 no_news skip을 원천 제거.
-    """
     import random
     from datetime import date, datetime, timedelta
     from sqlalchemy import func
@@ -168,7 +138,6 @@ def build_dataset_from_db(
 
     db = SessionLocal()
     try:
-        # 실제로 데이터가 있는 (ticker, 날짜) 페어만
         rows = (
             db.query(
                 NewsCache.ticker,
@@ -182,7 +151,6 @@ def build_dataset_from_db(
     finally:
         db.close()
 
-    # safety_days 적용
     eligible = [
         (t, d) for t, d in rows
         if datetime.strptime(d, "%Y-%m-%d").date() <= cutoff
@@ -193,7 +161,6 @@ def build_dataset_from_db(
             f"safety_days를 줄이거나 뉴스 풀 적재 필요."
         )
 
-    # 부족하면 가용분 전체, 충분하면 무작위 추출
     take = min(n_samples, len(eligible))
     sampled = random.sample(eligible, take)
 

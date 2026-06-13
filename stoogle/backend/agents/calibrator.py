@@ -1,20 +1,4 @@
-"""
-예측 정확도 보정 에이전트 (Calibrator)
-
-입력:
-  - records: 예측 레코드 목록 (List[PredictionRecord])
-  - actual_prices: D+3 실제 종가 {ticker: close_price}
-
-출력: CalibrationStats (보정된 confidence 점수 float 포함)
-
-동작:
-  1. 예측 방향(up/down) vs 실제 방향 비교 → Direction Accuracy 계산
-  2. Isotonic Regression으로 confidence 보정
-  3. reason 텍스트 임베딩 → PredictionVector(pgvector) 저장
-  4. PredictionLog 테이블 업데이트
-
-Celery: 매일 02:00 자동 실행 (tasks.py의 calibrate_predictions 태스크)
-"""
+# 예측 보정 에이전트
 from __future__ import annotations
 
 import logging
@@ -30,40 +14,35 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-_NEUTRAL_BAND = 0.005  # ±0.5% 이내는 neutral로 판정
-_MIN_SAMPLES_FOR_CALIBRATION = 5  # 이 미만이면 보정 없이 raw confidence 반환
+_NEUTRAL_BAND = 0.005
+_MIN_SAMPLES_FOR_CALIBRATION = 5
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 공개 입출력 타입
-# ─────────────────────────────────────────────────────────────────────────────
-
+# 예측 레코드
 @dataclass
 class PredictionRecord:
-    ticker: str             # 예측 대상 종목코드
-    source_ticker: str      # 분석 출처 종목코드
-    direction: str          # "up" / "down" / "neutral"
-    confidence: float       # 원시 confidence 0.0~1.0
-    reason: str             # 판단 근거 텍스트 (임베딩용)
-    prediction_date: str    # D+0 YYYY-MM-DD
-    target_date: str        # D+3 YYYY-MM-DD
+    ticker: str
+    source_ticker: str
+    direction: str
+    confidence: float
+    reason: str
+    prediction_date: str
+    target_date: str
     predicted_at: datetime = field(default_factory=datetime.utcnow)
-    db_id: Optional[int] = None   # 이미 PredictionLog에 저장된 경우 id
+    db_id: Optional[int] = None
 
 
+# 보정 통계
 @dataclass
 class CalibrationStats:
-    direction_accuracy: float           # 방향 정확도 (0.0~1.0)
-    sample_count: int                   # 평가된 예측 수
-    mean_raw_confidence: float          # 보정 전 평균 confidence
-    mean_calibrated_confidence: float   # 보정 후 평균 confidence
-    calibrated_scores: list[float]      # 레코드별 보정 confidence (입력 순서 동일)
+    direction_accuracy: float
+    sample_count: int
+    mean_raw_confidence: float
+    mean_calibrated_confidence: float
+    calibrated_scores: list[float]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 내부 유틸
-# ─────────────────────────────────────────────────────────────────────────────
-
+# 방향 판정
 def _direction(base: float, actual: float) -> str:
     if base <= 0:
         return "neutral"
@@ -75,12 +54,8 @@ def _direction(base: float, actual: float) -> str:
     return "neutral"
 
 
+# 종가 조회
 def _fetch_close_on_date(ticker: str, date_str: str) -> Optional[float]:
-    """
-    특정 날짜의 종가를 조회한다.
-    date_str: YYYY-MM-DD
-    휴장일이면 전후 5일 범위로 조회 후 가장 가까운 날짜 선택.
-    """
     try:
         from services.stock_service import get_price_history_range
 
@@ -94,16 +69,11 @@ def _fetch_close_on_date(ticker: str, date_str: str) -> Optional[float]:
         return None
 
 
+# 등장 회귀 보정
 def _isotonic_calibrate(
     confidences: list[float],
     labels: list[int],
 ) -> list[float]:
-    """
-    Isotonic Regression으로 raw confidence → calibrated probability.
-
-    labels: 1 = correct, 0 = incorrect
-    샘플 수 부족 시 raw confidence 반환.
-    """
     if len(confidences) < _MIN_SAMPLES_FOR_CALIBRATION:
         return confidences
 
@@ -121,8 +91,8 @@ def _isotonic_calibrate(
         return confidences
 
 
+# 텍스트 임베딩
 async def _embed_texts(texts: list[str]) -> list[list[float]]:
-    """Voyage AI voyage-3 배치 임베딩. 실패 시 빈 리스트 반환."""
     api_key = os.getenv("VOYAGE_API_KEY")
     if not api_key or not texts:
         return []
@@ -141,12 +111,12 @@ async def _embed_texts(texts: list[str]) -> list[list[float]]:
         return []
 
 
+# 예측 로그 저장
 def _save_prediction_logs(
     records: list[PredictionRecord],
-    outcomes: list[dict],       # {actual_direction, base_close, actual_close, is_correct}
+    outcomes: list[dict],
     calibrated: list[float],
 ) -> list[int]:
-    """PredictionLog upsert 후 저장된 id 목록 반환."""
     try:
         from models.db_models import PredictionLog, SessionLocal
 
@@ -196,13 +166,13 @@ def _save_prediction_logs(
         return []
 
 
+# 예측 벡터 저장
 async def _save_prediction_vectors(
     log_ids: list[int],
     reasons: list[str],
     labels: list[int],
     calibrated: list[float],
 ) -> None:
-    """reason 텍스트를 임베딩하여 PredictionVector에 저장."""
     try:
         from models.db_models import PredictionVector, SessionLocal, PGVECTOR_AVAILABLE
 
@@ -240,26 +210,11 @@ async def _save_prediction_vectors(
         logger.error("PredictionVector 저장 실패: %s", e)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 퍼블릭 API
-# ─────────────────────────────────────────────────────────────────────────────
-
+# 보정 실행
 async def run(
     records: list[PredictionRecord],
     actual_prices: dict[str, float],
 ) -> CalibrationStats:
-    """
-    예측 레코드를 평가하고 confidence를 보정한다.
-
-    Parameters
-    ----------
-    records       : 평가할 예측 레코드 목록
-    actual_prices : D+3 실제 종가 {ticker: close_price}
-
-    Returns
-    -------
-    CalibrationStats — mean_calibrated_confidence 가 핵심 float 출력값
-    """
     if not records:
         return CalibrationStats(
             direction_accuracy=0.0,
@@ -285,7 +240,6 @@ async def run(
             continue
 
         actual_dir = _direction(base_close, actual_close)
-        # neutral 예측은 정확도 계산에서 제외
         is_correct = (
             rec.direction == actual_dir
             if rec.direction != "neutral"
@@ -311,23 +265,20 @@ async def run(
             calibrated_scores=[],
         )
 
-    # Direction Accuracy (neutral 제외)
     scored = [o for o in outcomes if o["is_correct"] is not None]
     direction_accuracy = sum(1 for o in scored if o["is_correct"]) / len(scored) if scored else 0.0
 
-    # Confidence 보정
     raw_confidences = [r.confidence for r in evaluated]
     non_neutral_indices = [i for i, r in enumerate(evaluated) if r.direction != "neutral"]
     non_neutral_confidences = [raw_confidences[i] for i in non_neutral_indices]
-    non_neutral_labels = labels  # already filtered above
+    non_neutral_labels = labels
 
-    calibrated_all = list(raw_confidences)  # start with raw, overwrite non-neutral
+    calibrated_all = list(raw_confidences)
     if non_neutral_confidences:
         cal_scores = _isotonic_calibrate(non_neutral_confidences, non_neutral_labels)
         for idx, cal in zip(non_neutral_indices, cal_scores):
             calibrated_all[idx] = cal
 
-    # DB 저장
     log_ids = _save_prediction_logs(evaluated, outcomes, calibrated_all)
     if log_ids:
         await _save_prediction_vectors(
@@ -352,13 +303,8 @@ async def run(
     )
 
 
+# 일일 보정
 async def run_daily() -> CalibrationStats:
-    """
-    매일 02:00 Celery 태스크에서 호출.
-
-    target_date가 오늘 이전이고 아직 평가되지 않은 PredictionLog를 조회,
-    실제 종가를 pykrx로 가져와 run()을 실행한다.
-    """
     try:
         from models.db_models import PredictionLog, SessionLocal
 
@@ -383,7 +329,6 @@ async def run_daily() -> CalibrationStats:
 
         logger.info("평가 대기 예측 %d건 처리 시작", len(pending))
 
-        # target_date별로 유니크 ticker 수집 후 실제 종가 일괄 조회
         target_tickers: dict[str, set[str]] = {}
         for row in pending:
             target_tickers.setdefault(row.target_date, set()).add(row.ticker)
@@ -417,10 +362,6 @@ async def run_daily() -> CalibrationStats:
         return CalibrationStats(0.0, 0, 0.0, 0.0, [])
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 직접 실행 (테스트)
-# ─────────────────────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
     import asyncio
     from datetime import date, timedelta
@@ -450,7 +391,6 @@ if __name__ == "__main__":
         ),
     ]
 
-    # 실제 종가 수동 제공 (pykrx 없는 환경용)
     mock_actuals = {"000660": 185000.0, "009150": 157000.0, "035420": 210000.0}
 
     result = asyncio.run(run(sample_records, mock_actuals))

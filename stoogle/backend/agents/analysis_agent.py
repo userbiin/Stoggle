@@ -1,12 +1,4 @@
-"""
-종목 통합 분석 에이전트
-
-[변경 내역]
-  - 시스템 프롬프트: 방향 예측 편향 완화 지침 추가
-    (근거 없는 상승 예측 금지, 하락장 맥락 반영, neutral 허용)
-  - _save_prediction_logs: 같은 source→ticker 중복 저장 방지
-  - impacts 스키마에 direction="neutral" 포함 시 저장 제외 명시
-"""
+# 종목 통합 분석 에이전트
 from __future__ import annotations
 
 import json
@@ -28,6 +20,7 @@ logger = logging.getLogger(__name__)
 from agents.dedup_indexer import Article  # noqa: E402
 
 
+# 관계 항목
 class _RelationItem(BaseModel):
     ticker: str = Field(..., description="관계 기업 종목코드")
     name: str = Field(..., description="관계 기업명")
@@ -38,6 +31,7 @@ class _RelationItem(BaseModel):
     reason: str = Field(..., description="영향 판단 근거 (한국어 1문장)")
 
 
+# 영향 항목
 class _ImpactItem(BaseModel):
     ticker: str = Field(..., description="영향 종목코드")
     name: str = Field(..., description="영향 종목명")
@@ -46,6 +40,7 @@ class _ImpactItem(BaseModel):
     confidence: float = Field(..., description="확신도 0.0~1.0", ge=0.0, le=1.0)
 
 
+# 분석 스키마
 class _AnalysisSchema(BaseModel):
     events: list[str] = Field(..., description="핵심 이벤트 목록 3~5개 (한국어)")
     relations: list[_RelationItem] = Field(
@@ -61,6 +56,7 @@ class _AnalysisSchema(BaseModel):
     evidence: list[str] = Field(..., description="근거 헤드라인 2~4개 (원문 인용)")
 
 
+# 분석 결과
 @dataclass
 class AnalysisResult:
     ticker: str
@@ -71,10 +67,6 @@ class AnalysisResult:
     impacts: list[dict]
     evidence: list[str]
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 시스템 프롬프트 — 방향 편향 완화 버전
-# ─────────────────────────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT = """\
 당신은 한국 주식 시장 전문 애널리스트입니다.
@@ -113,10 +105,7 @@ _SYSTEM_PROMPT = """\
 """
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Context builders
-# ─────────────────────────────────────────────────────────────────────────────
-
+# DART 컨텍스트
 def _build_dart_context(ticker: str) -> str:
     try:
         from models.db_models import DartAnalysis, SessionLocal
@@ -152,6 +141,7 @@ def _build_dart_context(ticker: str) -> str:
         return ""
 
 
+# 정확도 컨텍스트
 def _build_accuracy_context(ticker: str) -> str:
     try:
         from models.db_models import PredictionLog, SessionLocal
@@ -191,6 +181,7 @@ def _build_accuracy_context(ticker: str) -> str:
     return ""
 
 
+# 관계 컨텍스트
 def _build_relation_context(ticker: str) -> str:
     try:
         from models.db_models import RelationCache, SessionLocal
@@ -221,6 +212,7 @@ def _build_relation_context(ticker: str) -> str:
         return ""
 
 
+# 유사 뉴스 컨텍스트
 async def _retrieve_similar_news_context(
     articles: list[Article],
     top_k: int = 5,
@@ -272,10 +264,7 @@ async def _retrieve_similar_news_context(
         return ""
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# LLM 호출
-# ─────────────────────────────────────────────────────────────────────────────
-
+# Claude 호출
 @track_agent("analysis_agent", "analysis_pipeline")
 async def _call_claude(client, model: str, user_prompt: str):
     return await client.messages.create(
@@ -293,10 +282,7 @@ async def _call_claude(client, model: str, user_prompt: str):
     )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 퍼블릭 API
-# ─────────────────────────────────────────────────────────────────────────────
-
+# 분석 실행
 async def run(
     articles: list[Article],
     ticker: str,
@@ -348,7 +334,6 @@ async def run(
             logger.error("structured output 결과가 None [ticker=%s]", ticker)
             return None
 
-        # impacts 중복 종목 제거 — 같은 ticker가 두 번 들어오면 confidence 높은 쪽만 유지
         seen_tickers: dict[str, _ImpactItem] = {}
         for item in parsed.impacts:
             if item.ticker not in seen_tickers:
@@ -373,13 +358,8 @@ async def run(
         return None
 
 
+# 예측 로그 저장
 def _save_prediction_logs(ticker: str, result: "AnalysisResult") -> None:
-    """
-    analysis_agent 결과의 impacts를 PredictionLog 테이블에 기록한다.
-
-    [변경] 같은 (source_ticker, ticker, prediction_date) 중복 방지.
-    direction='neutral'인 항목은 방향 예측 의미가 없으므로 저장하지 않는다.
-    """
     try:
         from models.db_models import PredictionLog, SessionLocal
         from services.stock_service import get_current_price
@@ -390,7 +370,6 @@ def _save_prediction_logs(ticker: str, result: "AnalysisResult") -> None:
 
         db = SessionLocal()
         try:
-            # 오늘 이미 저장된 (source_ticker, ticker) 쌍 조회
             existing = db.query(PredictionLog.ticker).filter(
                 PredictionLog.source_ticker == ticker,
                 PredictionLog.prediction_date == today_str,
@@ -405,11 +384,9 @@ def _save_prediction_logs(ticker: str, result: "AnalysisResult") -> None:
                 confidence = float(impact.get("confidence", 0.5))
                 reason = impact.get("reason", "")
 
-                # neutral 방향은 예측 의미 없음 — 저장 제외
                 if not impact_ticker or direction == "neutral":
                     continue
 
-                # 오늘 이미 저장된 종목 skip
                 if impact_ticker in already_saved:
                     logger.debug(
                         "중복 PredictionLog skip [%s→%s, %s]",
@@ -447,6 +424,7 @@ def _save_prediction_logs(ticker: str, result: "AnalysisResult") -> None:
         logger.error("PredictionLog 저장 실패 [ticker=%s]: %s", ticker, e)
 
 
+# 분석 후 저장
 async def run_and_save(
     articles: list[Article],
     ticker: str,
@@ -521,10 +499,6 @@ async def run_and_save(
 
     return result
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 직접 실행 (테스트)
-# ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import asyncio

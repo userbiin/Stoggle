@@ -1,17 +1,4 @@
-"""
-DART 공시에서 사업 관계 엣지를 추출하여 company_edges에 저장
-
-두 가지 접근 (LLM 거의 불필요):
-  A. DART API 구조화 데이터
-     - majorstock.json: 최대주주 현황 → 법인 주주는 affiliate/investor 엣지
-     - 계열회사 현황 섹션 regex 파싱
-  B. DartChunk 텍스트 regex 파싱
-     - 특수관계자 거래 섹션에서 기업명 추출 → affiliate 엣지
-     - 주요 원재료·매입처 섹션에서 공급사 추출 → supplier 엣지
-
-흐름:
-  run(ticker) → A + B 병렬 실행 → company_edges upsert → 저장 건수 반환
-"""
+# DART 엣지 추출기
 from __future__ import annotations
 
 import logging
@@ -27,18 +14,14 @@ logger = logging.getLogger(__name__)
 
 DART_BASE = "https://opendart.fss.or.kr/api"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 법인명 패턴 (한국어 회사명 추출)
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ㈜삼성전자, 삼성전자㈜, (주)삼성전자, 삼성전자(주), 삼성전자주식회사 등
+# 법인명 패턴
 _COMPANY_PATTERN = re.compile(
     r"(?:㈜|주식회사\s*|(?:\(주\)|\（주\）))\s*([가-힣a-zA-Z0-9&·\s]{2,20})"
     r"|([가-힣a-zA-Z0-9&·]{2,20})\s*(?:㈜|\(주\)|\（주\）|주식회사)",
     re.UNICODE,
 )
 
-# 특수관계자 섹션 헤더 패턴
+# 섹션 헤더 패턴
 _RELATED_PARTY_HEADERS = re.compile(
     r"특수관계자|관계회사|종속회사|계열회사|관련회사", re.IGNORECASE
 )
@@ -48,25 +31,23 @@ _SUPPLIER_HEADERS = re.compile(
     r"원재료|매입처|납품|공급업체|주요\s*거래처", re.IGNORECASE
 )
 
-# 고객사 섹션 헤더 패턴
 _CUSTOMER_HEADERS = re.compile(
     r"매출처|주요\s*고객|판매처", re.IGNORECASE
 )
 
-# 법적 접미사 제거 (정규화용)
 _LEGAL_SUFFIX = re.compile(
     r"\s*(?:주식회사|㈜|\(주\)|\（주\）|co\.,?\s*ltd\.?|corp\.?|inc\.?)\s*",
     re.IGNORECASE,
 )
 
 
+# 법인명 정규화
 def _normalize_name(name: str) -> str:
-    """법인명 정규화: 법적 접미사 제거 + 공백 정리"""
     return _LEGAL_SUFFIX.sub("", name).strip()
 
 
+# 법인명 추출
 def _extract_company_names(text: str) -> list[str]:
-    """텍스트에서 한국 법인명 추출 (정규화 포함)"""
     names = set()
     for m in _COMPANY_PATTERN.finditer(text):
         raw = (m.group(1) or m.group(2) or "").strip()
@@ -76,18 +57,15 @@ def _extract_company_names(text: str) -> list[str]:
     return list(names)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# corp_code 캐시 (dart_indexer와 공유하지 않아 독립적으로 유지)
-# ─────────────────────────────────────────────────────────────────────────────
-
-_CORP_CODE_CACHE: dict[str, str] = {}  # ticker → corp_code
+# corp_code 캐시
+_CORP_CODE_CACHE: dict[str, str] = {}
 
 
+# corp_code 조회
 async def _get_corp_code(ticker: str, api_key: str) -> Optional[str]:
     if ticker in _CORP_CODE_CACHE:
         return _CORP_CODE_CACHE[ticker]
     try:
-        # dart_indexer의 _CORP_CODE_MAP을 재사용
         from agents.dart_indexer import _CORP_CODE_MAP, _load_corp_codes
 
         await _load_corp_codes(api_key)
@@ -100,12 +78,8 @@ async def _get_corp_code(ticker: str, api_key: str) -> Optional[str]:
         return None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# A. DART API 구조화 데이터 파싱
-# ─────────────────────────────────────────────────────────────────────────────
-
+# 최대주주 현황 조회
 async def _fetch_majorstock(corp_code: str, api_key: str) -> list[dict]:
-    """최대주주 현황 조회 (majorstock.json). 법인 주주만 반환."""
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             res = await client.get(
@@ -122,16 +96,10 @@ async def _fetch_majorstock(corp_code: str, api_key: str) -> list[dict]:
         return []
 
 
+# XML 특수관계자 추출
 async def _fetch_related_party_from_xml(rcept_no: str, api_key: str) -> list[str]:
-    """
-    사업보고서 XML 원문에서 특수관계자 섹션을 추출하고
-    등장하는 기업명 목록을 반환한다.
-
-    추출 대상: '특수관계자와의 거래' 섹션 내 한국 대기업·중견기업 패턴
-    """
     import io, zipfile
 
-    # 주요 대기업 그룹명 기반 패턴 (공시 특수관계자 테이블에 자주 등장)
     _GROUP_PATTERN = re.compile(
         r"(?:삼성|SK|LG|현대|롯데|한화|포스코|두산|GS|CJ|한진|효성|LS|코오롱|신세계|현대중공업)"
         r"[가-힣A-Za-z0-9&·\s]{1,15}",
@@ -170,17 +138,8 @@ async def _fetch_related_party_from_xml(rcept_no: str, api_key: str) -> list[str
         return []
 
 
+# 주요주주 엣지 생성
 def _edges_from_majorstock(ticker: str, rows: list[dict], reverse_reg: dict) -> list[dict]:
-    """
-    주요주주 지분변동 보고서(majorstock.json)에서 법인 주주를 찾아 affiliate 엣지를 생성한다.
-
-    DART API 실제 응답 필드:
-      repror   — 보고자(주주) 이름
-      stkrt    — 현재 지분율 (%)
-      ctr_stkrt — 주요주주 기준 지분율 (%)
-
-    동일 보고자의 복수 보고 건은 가장 최근 지분율 하나로 중복 제거한다.
-    """
     individual_keywords = re.compile(r"대표이사|이사|사장|회장|부회장|임원|상무|전무|부사장|펀드|투자|자산운용")
     edges = []
     seen: set[str] = set()
@@ -210,8 +169,8 @@ def _edges_from_majorstock(ticker: str, rows: list[dict], reverse_reg: dict) -> 
         evidence = f"주요주주 지분 {hold_pct:.2f}% ({shareholder_nm})"
 
         edges.append({
-            "src": dst_ticker,      # 주주(모회사)가 src
-            "dst": ticker,          # 피투자기업이 dst
+            "src": dst_ticker,
+            "dst": ticker,
             "relation_type": "affiliate",
             "direction": "forward",
             "weight": confidence,
@@ -219,7 +178,6 @@ def _edges_from_majorstock(ticker: str, rows: list[dict], reverse_reg: dict) -> 
             "evidence": evidence,
             "source": "dart",
         })
-        # 역방향 엣지도 추가 (그래프 탐색 양방향 지원)
         edges.append({
             "src": ticker,
             "dst": dst_ticker,
@@ -234,11 +192,8 @@ def _edges_from_majorstock(ticker: str, rows: list[dict], reverse_reg: dict) -> 
     return edges
 
 
+# XML 기업명 엣지 생성
 def _edges_from_xml_names(ticker: str, names: list[str], reverse_reg: dict) -> list[dict]:
-    """
-    XML 특수관계자 섹션에서 추출된 기업명을 종목코드로 변환하여
-    affiliate 엣지를 생성한다.
-    """
     edges = []
     seen: set[str] = set()
 
@@ -257,7 +212,6 @@ def _edges_from_xml_names(ticker: str, names: list[str], reverse_reg: dict) -> l
             "evidence": f"사업보고서 특수관계자 섹션 명시: {name}",
             "source": "dart",
         })
-        # 역방향 엣지 (양방향 그래프 탐색 지원)
         edges.append({
             "src": dst_ticker,
             "dst": ticker,
@@ -272,16 +226,8 @@ def _edges_from_xml_names(ticker: str, names: list[str], reverse_reg: dict) -> l
     return edges
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# B. DartChunk 텍스트 regex 파싱
-# ─────────────────────────────────────────────────────────────────────────────
-
+# DartChunk 엣지 추출
 def _edges_from_dart_chunks(ticker: str, reverse_reg: dict) -> list[dict]:
-    """
-    DartChunk 테이블에서 특수관계자·공급사·고객사 섹션을 찾아
-    기업명 regex로 추출 → company_edges 변환.
-    pgvector 미설치 시 빈 리스트 반환.
-    """
     try:
         from models.db_models import DartChunk, SessionLocal, PGVECTOR_AVAILABLE
         from sqlalchemy import or_
@@ -359,15 +305,8 @@ def _edges_from_dart_chunks(ticker: str, reverse_reg: dict) -> list[dict]:
     return edges
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 이름 → 종목코드 해석
-# ─────────────────────────────────────────────────────────────────────────────
-
+# 종목코드 해석
 def _resolve_ticker(name: str, reverse_reg: dict[str, str]) -> Optional[str]:
-    """
-    기업명을 종목코드로 변환.
-    1. 정확 매칭 → 2. 정규화 매칭 → 3. 부분 매칭 (3자 이상)
-    """
     if name in reverse_reg:
         return reverse_reg[name]
     norm = _normalize_name(name)
@@ -380,8 +319,8 @@ def _resolve_ticker(name: str, reverse_reg: dict[str, str]) -> Optional[str]:
     return None
 
 
+# 역방향 레지스트리
 def _build_reverse_registry() -> dict[str, str]:
-    """레지스트리 역방향 조회 테이블 생성."""
     try:
         from services.stock_service import get_or_build_registry
 
@@ -401,15 +340,8 @@ def _build_reverse_registry() -> dict[str, str]:
         return {}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# DB 저장
-# ─────────────────────────────────────────────────────────────────────────────
-
+# 엣지 저장
 def _save_edges(edges: list[dict]) -> int:
-    """
-    company_edges upsert.
-    같은 (src, dst, relation_type) 쌍은 confidence가 높은 쪽으로 갱신.
-    """
     if not edges:
         return 0
     try:
@@ -431,7 +363,6 @@ def _save_edges(edges: list[dict]) -> int:
                 )
 
                 if existing:
-                    # confidence가 높아지는 경우에만 갱신
                     new_conf = edge.get("confidence") or 0.0
                     old_conf = existing.confidence or 0.0
                     if new_conf > old_conf:
@@ -462,22 +393,8 @@ def _save_edges(edges: list[dict]) -> int:
         return 0
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Public API
-# ─────────────────────────────────────────────────────────────────────────────
-
+# 엣지 추출 실행
 async def extract_dart_edges(ticker: str) -> int:
-    """
-    DART 공시에서 사업 관계 엣지를 추출하여 company_edges에 저장.
-
-    A. DART API (api_key 필요):
-       - majorstock.json  → 법인 주주(모회사) affiliate 엣지
-       - 사업보고서 XML   → 특수관계자 섹션 기업명 → affiliate 엣지
-
-    B. DartChunk regex   → 텍스트 패턴 기반 추가 엣지
-
-    Returns: 저장된 엣지 수
-    """
     import asyncio
 
     api_key = os.getenv("DART_API_KEY")
@@ -491,14 +408,12 @@ async def extract_dart_edges(ticker: str) -> int:
     if api_key:
         corp_code = await _get_corp_code(ticker, api_key)
         if corp_code:
-            # 최대주주 + 최신 사업보고서 rcept_no 병렬 조회
             major_rows, disclosures = await asyncio.gather(
                 _fetch_majorstock(corp_code, api_key),
                 _fetch_latest_annual_rcept(corp_code, api_key),
             )
             all_edges.extend(_edges_from_majorstock(ticker, major_rows, reverse_reg))
 
-            # 사업보고서 XML에서 특수관계자 기업명 추출
             if disclosures:
                 rcept_no = disclosures[0].get("rcept_no", "")
                 xml_names = await _fetch_related_party_from_xml(rcept_no, api_key)
@@ -509,10 +424,8 @@ async def extract_dart_edges(ticker: str) -> int:
     else:
         logger.debug("[%s] DART_API_KEY 없음 — DartChunk 파싱만 실행", ticker)
 
-    # B. DartChunk 텍스트 regex 파싱
     all_edges.extend(_edges_from_dart_chunks(ticker, reverse_reg))
 
-    # 중복 제거: (src, dst, relation_type) 기준, confidence 최대값 유지
     deduped: dict[tuple, dict] = {}
     for edge in all_edges:
         key = (edge["src"], edge["dst"], edge["relation_type"])
@@ -525,8 +438,8 @@ async def extract_dart_edges(ticker: str) -> int:
     return saved
 
 
+# 최근 사업보고서 조회
 async def _fetch_latest_annual_rcept(corp_code: str, api_key: str) -> list[dict]:
-    """최근 사업보고서(11011) 1건의 rcept_no를 반환한다."""
     from datetime import datetime, timedelta
     bgn_de = (datetime.today() - timedelta(days=400)).strftime("%Y%m%d")
     try:
@@ -543,17 +456,12 @@ async def _fetch_latest_annual_rcept(corp_code: str, api_key: str) -> list[dict]
             )
             res.raise_for_status()
         items = res.json().get("list", [])
-        # 사업보고서(연간)만 필터
         annual = [i for i in items if "사업보고서" in i.get("report_nm", "")]
         return annual[:1]
     except Exception as e:
         logger.debug("사업보고서 목록 조회 실패 (%s): %s", corp_code, e)
         return []
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 직접 실행 (테스트)
-# ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     import asyncio
