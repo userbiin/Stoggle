@@ -1,5 +1,4 @@
-// 백엔드 없이 UI 개발용 목 데이터
-
+// mockData
 export const mockSearchResults = [
   {
     ticker: "005930",
@@ -95,7 +94,6 @@ export const mockNews = [
 ];
 
 export const mockRelations = {
-  // discovery_status 필드: "ready" | "pending"
   discovery_status: "ready",
   nodes: [
     { id: "005930", name: "삼성전자", group: 0, size: 40 },
@@ -127,7 +125,6 @@ export const mockRelations = {
     { ticker: "207940", name: "삼성바이오로직스", correlation: 0.58, reason: "삼성 계열사 동반 흐름", relation_type: "계열사" },
     { ticker: "035420", name: "NAVER",      correlation: 0.45, reason: "AI 인프라 협력 파트너", relation_type: "협력" },
   ],
-  // impact는 relations API 응답에 포함
   impact: [
     { ticker: "009150", name: "삼성전기",    impact: "positive", reason: "HBM3E 공급 확대로 MLCC·카메라모듈 등 핵심 부품 동반 수주 증가 기대" },
     { ticker: "028260", name: "삼성물산",    impact: "positive", reason: "삼성전자 반도체 파운드리 투자 확대에 따른 건설·EPC 수주 수혜 예상" },
@@ -137,17 +134,7 @@ export const mockRelations = {
   ],
 };
 
-// discovery_status="pending" 테스트용 (필요시 위 mockRelations의 status를 "pending"으로 바꿔서 확인)
-export const mockRelationsPending = {
-  ...mockRelations,
-  discovery_status: "pending",
-  nodes: [],
-  links: [],
-  related_companies: [],
-  impact: [],
-};
-
-// 주가 히스토리 생성 헬퍼
+// 주가 히스토리 생성
 function generatePriceHistory(currentPrice, days) {
   const history = [];
   const now = new Date();
@@ -168,5 +155,4 @@ function generatePriceHistory(currentPrice, days) {
   return history;
 }
 
-// 하위 호환: mockImpact는 더 이상 별도로 쓰지 않지만 기존 import 깨지지 않도록 유지
 export const mockImpact = mockRelations.impact;

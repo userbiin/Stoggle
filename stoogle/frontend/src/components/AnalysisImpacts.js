@@ -1,3 +1,4 @@
+// AnalysisImpacts
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -94,6 +95,7 @@ const styles = {
   },
 };
 
+// 인사이트 텍스트
 function buildInsightText(items) {
   const up = items.filter((i) => i.direction === 'up');
   const down = items.filter((i) => i.direction === 'down');
@@ -112,6 +114,7 @@ function buildInsightText(items) {
   return parts.join('. ') + (parts.length ? '.' : '');
 }
 
+// AI 영향 예측
 export default function AnalysisImpacts({ items = [] }) {
   const navigate = useNavigate();
   const filtered = items.filter((i) => i.direction !== 'neutral');

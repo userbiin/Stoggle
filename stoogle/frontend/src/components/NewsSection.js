@@ -1,3 +1,4 @@
+// NewsSection
 import React, { useState } from 'react';
 
 const PAGE_SIZE = 5;
@@ -44,12 +45,14 @@ const styles = {
   noNews: { padding: '32px 0', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '14px', flex: 1 },
 };
 
+// 감성 배지
 function sentimentBadge(s) {
   if (s === 'positive') return <span className="badge badge-negative">긍정</span>;
   if (s === 'negative') return <span className="badge badge-positive">부정</span>;
   return <span className="badge badge-neutral">중립</span>;
 }
 
+// 상대 시간
 function relativeTime(dateStr) {
   const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
   if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
@@ -64,12 +67,14 @@ const TABS = [
   { key: 'negative', label: '부정' },
 ];
 
+// 탭 활성 클래스
 function tabActiveClass(key) {
   if (key === 'positive') return 'news-tab-btn active-positive';
   if (key === 'negative') return 'news-tab-btn active-negative';
   return 'news-tab-btn active';
 }
 
+// 뉴스 섹션
 export default function NewsSection({ news = [] }) {
   const [tab, setTab] = useState('all');
   const [page, setPage] = useState(0);
@@ -80,6 +85,7 @@ export default function NewsSection({ news = [] }) {
   const canPrev = page > 0;
   const canNext = page < totalPages - 1;
 
+  // 탭 변경
   function handleTabChange(key) {
     setTab(key);
     setPage(0);

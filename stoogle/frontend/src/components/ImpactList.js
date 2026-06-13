@@ -1,3 +1,4 @@
+// ImpactList
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -89,6 +90,7 @@ const styles = {
   },
 };
 
+// 인사이트 텍스트
 function buildInsightText(items) {
   const pos = items.filter((i) => i.impact === 'positive');
   const neg = items.filter((i) => i.impact === 'negative');
@@ -109,6 +111,7 @@ function buildInsightText(items) {
   return parts.join('. ') + (parts.length ? '.' : '');
 }
 
+// 영향 종목
 export default function ImpactList({ items = [] }) {
   const navigate = useNavigate();
 

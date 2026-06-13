@@ -1,314 +1,225 @@
-# Stoogle — 주식 종목 인사이트 플랫폼
+# Stoogle — 주식 전용 인사이트 검색엔진
 
-최종 update : 2026-04-30
-
----
-
-## 프로젝트 개요
-
-✨ 한국 주식 종목을 검색하면 기업 상세 정보, 주가 차트, 최근 뉴스, 키워드, 연관 기업 관계도, 영향 종목을 한 화면에서 보여주는 웹 애플리케이션
-
-현재 코드는 **KRX 주가 수집, Redis 캐싱, FastAPI API 서빙, Pearson 상관계수 기반 기업 관계 도출, D3 관계 시각화가 구현된 MVP 단계** 
-Frontend는 기본적으로 mock 데이터를 사용하며, `REACT_APP_USE_MOCK=false`로 설정하면 FastAPI 백엔드 API를 호출함
+> "주식 전용 구글"  
+> KOSPI/KOSDAQ 종목의 뉴스·주가·기업 관계를 한 화면에서 탐색하는 AI 기반 검색 플랫폼
 
 ---
 
-## 현재 구현 상태
+## 주요 기능
 
-### FE
-
-- React 18 + React Router v6 기반 SPA
-- 라우트 구현
-  - `/` — 검색 홈
-  - `/search?q={query}` — 검색 결과
-  - `/company/:ticker` — 기업 상세 인사이트
-- 구현된 화면/컴포넌트
-  - `MainPage` — 구글 스타일 검색 홈, 추천 검색 칩
-  - `SearchResultsPage` — 종목 검색 결과, 백엔드 API 또는 mock 데이터 사용
-  - `CompanyDetailPage` — 기업 요약, 지표, 주가 차트, 키워드, 뉴스, 관계도, 영향 종목
-  - `TopBar`, `PriceChart`, `WordCloudSection`, `NewsSection`, `RelationGraph`, `RelationList`, `ImpactList`
-- 시각화 라이브러리
-  - Recharts — 주가 AreaChart
-  - D3 + d3-cloud — 관계 그래프, 워드 클라우드
-- 현재 스타일 방식
-  - `global.css`의 CSS 변수 + 컴포넌트 내부 인라인 스타일 중심으로 구현
-- API 연결 방식
-  - `Stoogle/frontend/package.json`의 `"proxy": "http://localhost:8000"` 설정
-  - `axios.get('/api/v1/...')` 형태로 FastAPI 호출
-- mock 기본값
-  - `REACT_APP_USE_MOCK !== 'false'`이면 mock 데이터 사용
-  - 실데이터를 보려면 프론트 실행 시 `REACT_APP_USE_MOCK=false` 필요
-
-### BE
-
-- FastAPI 앱과 라우터 구현
-  - `GET /api/v1/search?q={query}`
-  - `GET /api/v1/insight/{ticker}`
-  - `GET /api/v1/news/{ticker}`
-  - `GET /api/v1/relations/{ticker}`
-  - `GET /health`
-- 주가/종목 서비스
-  - `pykrx`로 KOSPI/KOSDAQ/KONEX 종목 레지스트리 구축
-  - 종목 검색, 현재가, 주가 히스토리, 시총/PER/PBR/EPS 조회
-  - Redis 캐시 우선 사용, 캐시 미스 시 `pykrx` 직접 호출
-- 뉴스 서비스
-  - 네이버 금융 종목 뉴스 페이지 크롤링
-  - 간단한 규칙 기반 뉴스 카테고리 분류와 감성 라벨링
-  - page=1 뉴스 Redis 캐시
-- NLP/LLM
-  - `konlpy`가 있으면 Okt 명사 추출, 실패 시 정규식 fallback
-  - CLAUDE API 키가 있으면 뉴스 요약 생성
-  - API 키가 없거나 호출 실패 시 간단 fallback 요약 반환
-- 관계 분석
-  - Redis 캐시가 적용된 주가 히스토리 기반으로 기준 종목과 KOSPI200 후보 종목 간 종가 Pearson 상관계수 계산
-  - D3 관계 그래프용 `nodes`, `links`, `related_companies` 반환
-  - CLAUDE API 키가 있으면 최신 뉴스와 관계사 목록을 바탕으로 영향 종목 추론
-- Celery 자동화
-  - Redis broker/backend 사용
-  - 주가 캐시, 뉴스 사전 수집, 뉴스 크롤링, DART 공시 수집, 상관계수 재계산, 관계도 갱신 태스크 정의
-- DB 모델
-  - SQLAlchemy ORM 모델 정의 완료
-  - `companies`, `price_history`, `news_cache`, `insight_cache`, `relation_cache`, `news_vectors`
-  - pgvector 기반 뉴스 embedding 색인 모듈은 구현되어 있으나, 현재 핵심 주가/관계 API 흐름에는 직접 필요하지 않음
+| 기능 | 설명 |
+|---|---|
+| **종목 검색** | 종목명 또는 종목코드로 KOSPI/KOSDAQ 전종목 검색 |
+| **인사이트 대시보드** | 주가 차트·시가총액·PER/PBR·키워드·AI 요약을 하나의 화면에 표시 |
+| **뉴스 피드** | 감성 분석 + 관련도 랭킹이 적용된 최신 뉴스 |
+| **기업 관계 그래프** | 주가 상관관계·DART 공시·뉴스 분석 기반 기업 관계 네트워크 시각화 |
+| **AI 영향 예측** | Claude가 분석한 연관 종목별 상승/하락 영향 및 신뢰도 |
+| **백테스트 평가** | 예측 정확도 측정 및 Isotonic Regression 기반 신뢰도 재보정 |
 
 ---
 
-## 프로젝트 구조
+## 기술 스택
 
-```text
-Stoogle/
-├── frontend/
-│   ├── package.json
-│   ├── public/
-│   │   └── index.html
-│   └── src/
-│       ├── App.js
-│       ├── index.js
-│       ├── pages/
-│       │   ├── MainPage.js
-│       │   ├── SearchResultsPage.js
-│       │   └── CompanyDetailPage.js
-│       ├── components/
-│       │   ├── TopBar.js
-│       │   ├── PriceChart.js
-│       │   ├── WordCloudSection.js
-│       │   ├── NewsSection.js
-│       │   ├── RelationGraph.js
-│       │   ├── RelationList.js
-│       │   └── ImpactList.js
-│       ├── utils/
-│       │   └── mockData.js
-│       └── styles/
-│           └── global.css
-│
-├── backend/
-│   ├── main.py
-│   ├── tasks.py
-│   ├── requirements.txt
-│   ├── .env.example
-│   ├── routers/
-│   │   ├── search.py
-│   │   ├── insight.py
-│   │   ├── news.py
-│   │   └── relations.py
-│   ├── services/
-│   │   ├── stock_service.py
-│   │   ├── news_service.py
-│   │   ├── nlp_service.py
-│   │   ├── relation_service.py
-│   │   └── cache_service.py
-│   ├── models/
-│   │   ├── schemas.py
-│   │   └── db_models.py
-│   └── agents/
-│       ├── news_agent.py
-│       ├── summary_agent.py
-│       ├── relevance_agent.py
-│       └── dedup_indexer.py
-└── README.md
+### Frontend
+- **React 18** + React Router v6
+- **Recharts** — 주가 차트
+- **D3.js** — 기업 관계 Force-directed 그래프
+
+### Backend
+- **FastAPI** + SQLAlchemy 2.0
+- **pykrx** — KRX 주가·시장 데이터
+- **BeautifulSoup4 / Trafilatura** — 뉴스 크롤링·본문 추출
+- **KoNLPy (Okt)** — 한국어 키워드 추출
+
+### AI / LLM
+- **Anthropic Claude** (`claude-sonnet-4-6`) — 뉴스 종합 분석, 기업 관계 발굴, 영향 예측
+- **OpenAI** (`text-embedding-3-small`) — pgvector 뉴스 임베딩·중복 제거
+- **VoyageAI** — 예측 벡터 임베딩
+- **LangChain / LangChain-Anthropic** — 뉴스 에이전트
+
+### Database
+- **PostgreSQL 16 + pgvector** (Supabase 프로덕션) / SQLite 폴백
+- **Redis** — 실시간 주가 캐시(TTL 60s), 관계 발굴 분산 락
+
+### Task Queue
+- **Celery + Redis** — 12개 정기 태스크 (Asia/Seoul 타임존)
+
+---
+
+## 아키텍처
+
 ```
+Frontend (React 18, :3000)
+    ↓ REST API
+Backend (FastAPI, :8000)
+    ├── routers/          # API 라우트 (search, insight, news, relations)
+    ├── services/         # 비즈니스 로직 (stock, news, nlp, relation, cache)
+    ├── agents/           # AI 에이전트 (analysis, relation_discovery, calibrator, ...)
+    ├── models/           # ORM + Pydantic 스키마
+    ├── evaluation/       # 백테스트·관측성·예측 정확도
+    └── tasks.py          # Celery Beat 스케줄
+         ↓
+    PostgreSQL (pgvector) + Redis
+```
+
+### API 엔드포인트
+
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| `GET` | `/api/v1/search?q=` | 종목 검색 |
+| `GET` | `/api/v1/insight/{ticker}` | 주가·PER/PBR·키워드·AI 요약 |
+| `GET` | `/api/v1/news/{ticker}?page=` | 랭킹된 뉴스 목록 |
+| `GET` | `/api/v1/relations/{ticker}` | 기업 관계 그래프 + 영향 분석 |
+
+---
+
+## Celery 스케줄 (12 tasks)
+
+| 태스크 | 주기 | 설명 |
+|---|---|---|
+| `fetch_top200_prices` | 60초 | KOSPI200 실시간 주가 → Redis |
+| `cache_eod_prices` | 평일 15:35 | 장 마감 후 주가 캐시 (주말 대비) |
+| `update_price_history` | 매일 16:00 | 90일 OHLCV 이력 갱신 |
+| `crawl_all_news` | 매시간 | KOSPI200 종목 뉴스 → 관련도 필터 → 중복 제거 → AI 분석 |
+| `crawl_category_news` | 매시간 | Naver API 정치·사회·경제 뉴스 → KOSPI200 관련도 필터 |
+| `prefetch_news_for_major_stocks` | 매일 08:30 | 상위 30 종목 뉴스 프리웜 |
+| `fetch_dart_filings` | 매일 08:00 | DART 공시 수집 |
+| `recompute_correlations` | 매일 00:00 | KOSPI200 전종목 Pearson 상관계수 재계산 |
+| `update_relation_graphs` | 월 09:00 | 관계 유형 전체 재분류 → DB 저장 |
+| `refresh_ticker_registry` | 월 07:00 | KRX 전종목 목록 갱신 → Redis |
+| `calibrate_predictions` | 매일 02:00 | D+3 예측 정확도 평가 + 신뢰도 재보정 |
+| `index_dart_disclosures` | 매일 18:00 | DART 공시 → pgvector 인덱싱 |
+
+---
+
+## 모듈 설명
+
+### `agents/`
+| 모듈 | 역할 |
+|---|---|
+| `analysis_agent.py` | Claude structured-output으로 뉴스 이벤트·감성·관계·영향 분석 → InsightCache 저장 |
+| `relation_discovery_agent.py` | 기업 관계 발굴 (뉴스 + DART 기반) → RelationCache + company_edges 저장 |
+| `calibrator.py` | D+3 예측 정확도 평가 + Isotonic Regression으로 신뢰도 점수 보정 |
+| `dart_indexer.py` | DART 공시 XML → 400토큰 청크 → pgvector DartChunk 인덱싱 |
+| `dart_edge_extractor.py` | DART 공시에서 기업 관계 엣지 추출 |
+| `dedup_indexer.py` | OpenAI 임베딩 기반 뉴스 중복 제거 → NewsVector 저장 |
+| `relevance_agent.py` | 뉴스-종목 관련도 필터 (규칙 기반 → Ollama 점수) |
+| `naver_news_crawler.py` | Naver Open API 뉴스 크롤러 |
+| `naver_section_crawler.py` | Naver 섹션 페이지 크롤러 |
+| `rss_collector.py` | 주요 언론사 RSS 수집기 (feedparser) |
+| `news_agent.py` | LangChain 기반 뉴스 에이전트 (선택적) |
+| `summary_agent.py` | 뉴스 제목 기반 요약 에이전트 |
+
+### `services/`
+| 모듈 | 역할 |
+|---|---|
+| `stock_service.py` | pykrx 기반 주가·시장 데이터 조회 |
+| `news_service.py` | Naver Finance 뉴스 스크래핑 + 감성 랭킹 |
+| `nlp_service.py` | KoNLPy 키워드 추출 + Claude 요약 |
+| `relation_service.py` | Pearson 상관관계 + DB 기업 관계 조회 |
+| `cache_service.py` | Redis 캐시 (티커 레지스트리, 주가, 인사이트) |
+
+### `evaluation/`
+| 모듈 | 역할 |
+|---|---|
+| `backtest.py` | 뉴스 기반 예측 vs 실제 주가 백테스트 |
+| `market_model.py` | 시장 지수 모델 (statsmodels 기반) |
+| `observability.py` | 에이전트 호출 추적·Prometheus 메트릭 |
+| `prediction_scorer.py` | 예측 점수 산정 |
+| `hallucination_check.py` | LLM 할루시네이션 검증 |
+| `dataset_builder.py` | 평가 데이터셋 빌더 |
+
+### DB 테이블
+| 테이블 | 설명 |
+|---|---|
+| `companies` | 종목 기본 정보 |
+| `price_history` | 90일 OHLCV 이력 |
+| `news_cache` | 뉴스 캐시 |
+| `insight_cache` | AI 분석 결과 캐시 |
+| `relation_cache` | 기업 관계 캐시 (source: news/dart/correlation) |
+| `company_edges` | 기업 관계 그래프 엣지 |
+| `dart_analysis` | DART 공시 재무 분석 결과 |
+| `prediction_log` | 예측 로그 |
+| `news_vectors` | 뉴스 임베딩 (pgvector, PostgreSQL only) |
+| `prediction_vectors` | 예측 임베딩 (pgvector, PostgreSQL only) |
+| `dart_chunks` | DART 공시 청크 (pgvector, PostgreSQL only) |
 
 ---
 
 ## 빠른 시작
 
-### 1. 프론트엔드 실행
+### 1. 환경 변수 설정
 
 ```bash
-cd Stoogle/frontend
-npm install
-npm start
+# stoogle/backend/.env
+DATABASE_URL=postgresql://stoogle:stoogle1234@localhost:5432/stoogle
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+REDIS_URL=redis://localhost:6379/0
+NAVER_CLIENT_ID=...
+NAVER_CLIENT_SECRET=...
 ```
 
-
-```bash
-REACT_APP_USE_MOCK=false npm start
-```
-
-실행 주소: `http://localhost:3000`
-
-### 2. 백엔드 실행
-
-```bash
-cd Stoogle/backend
-
-python -m venv venv
-source venv/bin/activate
-
-pip install -r requirements.txt
-cp .env.example .env
-
-python models/db_models.py
-uvicorn main:app --reload --port 8000
-```
-
-Swagger UI: `http://localhost:8000/docs`
-
-### 3. Redis / Celery 실행
-
-```bash
-docker run -d -p 6379:6379 redis:7
-
-cd Stoogle/backend
-celery -A tasks worker --loglevel=info
-celery -A tasks beat --loglevel=info
-```
-
-### 4. 로컬 PostgreSQL 실행
+### 2. 데이터베이스 (PostgreSQL + pgvector)
 
 ```bash
 docker-compose up -d
 ```
 
-기본 접속 정보:
+### 3. 백엔드
 
-```env
-DATABASE_URL=postgresql://stoogle:stoogle1234@localhost:5432/stoogle
+```bash
+source .venv/bin/activate   # Python 3.12
+cd stoogle/backend
+uvicorn main:app --reload --port 8000
 ```
 
----
+### 4. Celery 워커
 
-## API 엔드포인트
-
-| Method | URL | 설명 | 현재 데이터 소스 |
-|--------|-----|------|------------------|
-| GET | `/api/v1/search?q={query}` | 기업명·종목코드 검색 | Redis registry → pykrx |
-| GET | `/api/v1/insight/{ticker}` | 기업 종합 인사이트 | pykrx + 뉴스 + NLP/LLM |
-| GET | `/api/v1/news/{ticker}` | 기업 뉴스 목록 | Redis news cache → 네이버 금융 크롤링 |
-| GET | `/api/v1/relations/{ticker}` | 연관 기업 관계도/영향 종목 | pykrx 상관계수 + CLAUDE optional |
-| GET | `/health` | 서버 상태 확인 | FastAPI |
-
----
-
-## API 명세
-
-| 단계 | 명칭 | 명세 요약 | 현재 상태 |
-|------|------|-----------|-----------|
-| 1 | 뉴스 수집 | Naver API/Celery로 1시간마다 기사 URL·제목·발행시각 수집 | 부분 구현: 네이버 금융 종목 뉴스 크롤링 + Redis 캐시. Naver Search API 기반 쿼리 템플릿 수집은 미연결 |
-| 2 | 원문 추출·요약 에이전트 | 기사 URL → 본문 추출 → 품질 평가 → claude-ai 3문장 요약 → DB 저장 | 부분 구현: `summary_agent.py` 구현. 기존 뉴스 API 파이프라인에는 미연결 |
-| 3 | Embedding 선필터 | 요약 기사 전체 → 중복 제거 후 pgvector 색인, 모델 BGE-M3 | 부분 구현: `dedup_indexer.py` 구현. 현재 모델은 CLAUDE `text-embedding-3-small`이며 BGE-M3 아님 |
-| 4 | 관련성 판별 에이전트 | 종목 프로필 + 후보 기사 → EXAONE 점수 0~5, 4점 이상 통과 | 구현 파일 있음: `relevance_agent.py`. 기존 뉴스 수집 파이프라인에는 미연결 |
-| 5 | 조건부 게이트 | 통과 기사 0건이면 종료, 1건 이상이면 다음 단계 | 미구현: 통합 파이프라인 연결 시 구현 필요 |
-| 6 | 이벤트·관계·요약 통합 에이전트 | 통과 기사 + DART/관계 RAG → structured output | 부분 구현: 영향 종목 추론은 `news_agent.py`에 있음. DART/관계 RAG 통합은 미구현 |
-| 7 | 결과 저장 | 통합 에이전트 출력 → PostgreSQL 저장 + Redis 캐시 갱신 | 미구현: 핵심 API는 현재 Redis + pykrx 중심 |
-| 8 | DART 수집 | corp_code, stock_code → 재무제표·사업보고서·공시 원문 | 부분 구현: Celery 태스크 골격 있음. corp_code 매핑/저장 검증 필요 |
-| 9 | DART 청킹·색인 | DART 원문 → 섹션 청크 → pgvector 저장, 모델 BGE-M3 | 미구현 |
-| 10 | DART 재무분석 에이전트 | DART 청크 → 핵심 수치 추출 → PostgreSQL 저장 | 미구현 |
-| 11 | Calibrator | 예측 레코드 + D+3 실제 주가 → confidence 보정값 pgvector 저장 | 미구현 |
-
-핵심 구현 범위 상태:
-
-- [x] KRX 주가 수집 모듈
-- [x] Redis 캐싱
-- [x] FastAPI 백엔드 API 서빙
-- [x] Pearson 상관계수 기반 기업 관계 도출
-- [x] D3.js 기업 관계 시각화
-- [~] API 키/LLM 입력 시 동작: CLAUDE/EXAONE 키가 없으면 fallback 또는 빈 결과. 키 입력 후에는 요약·영향 추론·관련도 판별 모듈이 동작 가능하지만, 전체 뉴스 파이프라인 연결은 추가 구현 필요
-
----
-
-## 환경변수
-
-```env
-CLAUDE_API_KEY=sk-...
-LLM_MODEL=claude-ai
-DART_API_KEY=
-DATABASE_URL=postgresql://postgres.[PROJECT_ID]:[YOUR-PASSWORD]@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres
-REDIS_URL=redis://localhost:6379/0
-ALLOWED_ORIGINS=http://localhost:3000
-NAVER_CLIENT_ID=...
-NAVER_CLIENT_SECRET=...
-EXAONE_API_KEY=
-EXAONE_BASE_URL=https://api.exaone.lgai.ai/v1
-EXAONE_MODEL=EXAONE-3.5-7.8B-Instruct
+```bash
+docker run -d -p 6379:6379 redis:7
+celery -A tasks worker --loglevel=info
+celery -A tasks beat --loglevel=info
 ```
 
-✔️ 확인 사항 :
+### 5. 프론트엔드
 
-- CLAUDE API 키가 없으면 LLM 요약과 영향 종목 추론은 fallback 또는 빈 결과로 처리됨
-- EXAONE API 키가 없으면 관련도 판별 에이전트는 0점 처리되며, 현재 핵심 주가/관계 API에는 영향 X
-- DART API 키가 없으면 공시 수집 Celery 태스크는 skip
-- `DATABASE_URL`은 SQLAlchemy 테이블 생성과 pgvector 뉴스 색인 모듈에서 사용
-- PostgreSQL 드라이버(`psycopg2-binary`)와 `pgvector` Python 패키지는 `requirements.txt`에 포함
-- ‼️ 파일에 API Key 넣지 말 것!! -> 제외하고 commit
+```bash
+cd stoogle/frontend
+npm install
+REACT_APP_USE_MOCK=false npm start
+```
 
----
-
-
-## Celery 스케줄
-
-| 태스크 | 주기 | 현재 상태 |
-|--------|------|-----------|
-| `fetch_top200_prices` | 60초 | 장중 KOSPI200 현재가 Redis 캐싱 |
-| `update_price_history` | 매일 16:00 | 90일 히스토리 Redis 캐싱 |
-| `crawl_all_news` | 매시 정각 | KOSPI200 뉴스 강제 크롤링 후 Redis 캐싱 |
-| `prefetch_news_for_major_stocks` | 매일 08:30 | 주요 30개 종목 뉴스 page=1 Redis 사전 캐싱 |
-| `fetch_dart_filings` | 매일 08:00 | DART API 키 필요, 결과는 현재 반환값 중심 |
-| `recompute_correlations` | 매일 00:00 | 상관계수 계산만 수행, 영구 저장 미구현 |
-| `update_relation_graphs` | 매주 월요일 09:00 | 관계도 계산 수행, 영구 저장 미구현 |
-| `refresh_ticker_registry` | 매주 월요일 07:00 | KRX 종목 레지스트리 Redis 갱신 |
+Swagger UI: `http://localhost:8000/docs`  
+Frontend: `http://localhost:3000`
 
 ---
 
-## 진행 상황 요약
+## 환경 변수
 
-### 완료
-
-- [x] React SPA 라우팅 구현
-- [x] 검색 홈/검색 결과/기업 상세 화면 구현
-- [x] mock 데이터 기반 프론트엔드 전체 플로우 구현
-- [x] FastAPI 앱, CORS, 라우터 4종 구현
-- [x] pykrx 기반 종목 검색/주가/시총 데이터 수집 서비스 구현
-- [x] Redis 기반 종목 레지스트리/현재가/주가 히스토리/뉴스 캐싱 구현
-- [x] 네이버 금융 뉴스 크롤링 및 간단 랭킹/분류 구현
-- [x] 키워드 추출 및 CLAUDE 요약 fallback 구현
-- [x] Pearson 상관계수 기반 기업 관계 도출 구현
-- [x] D3 관계 그래프용 데이터 생성 및 프론트 시각화 구현
-- [x] Celery 자동화 태스크 골격 및 뉴스 사전 수집 태스크 구현
-- [x] SQLAlchemy ORM 모델 및 pgvector 뉴스 벡터 모델 정의
-
-### 진행 중 / 보완 필요
-
-- [ ] 뉴스 분류 알고리즘 ⭐️
-- [ ] `REACT_APP_USE_MOCK=false` 상태에서 프론트-백엔드 실데이터 E2E 검증
-- [ ] Redis 실행 환경에서 검색/뉴스/가격 캐시 동작 검증
-- [ ] Notion API 명세 block과 실제 FastAPI 응답 스키마 최종 대조
-- [ ] Supabase/PostgreSQL을 핵심 데이터 영구 저장소로 쓸지 결정하고 저장/조회 로직 연결
-- [ ] DART 공시 수집에서 ticker와 corp_code 매핑 검증
-- [ ] 관계도/상관계수 계산 결과 저장 구조 구현
-- [ ] 뉴스 요약/관련도/중복 제거 에이전트를 뉴스 수집 파이프라인에 연결
-- [ ] API 에러 응답과 프론트 fallback UX 보강
-- [ ] 단위 테스트/통합 테스트 추가
-- [ ] `.env.example`의 민감 키 placeholder 정리
+| 변수 | 필수 | 설명 |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | 권장 | Claude 분석·관계 발굴 |
+| `OPENAI_API_KEY` | 선택 | pgvector 임베딩 (미설정 시 인덱싱 스킵) |
+| `DATABASE_URL` | 선택 | PostgreSQL (미설정 시 SQLite 폴백) |
+| `REDIS_URL` | 선택 | Celery 브로커 (기본: `redis://localhost:6379/0`) |
+| `NAVER_CLIENT_ID/SECRET` | 선택 | Naver News API (미설정 시 스킵) |
+| `DART_API_KEY` | 선택 | DART 공시 API (미설정 시 스킵) |
+| `OLLAMA_BASE_URL` | 선택 | Ollama 로컬 모델 (관련도 필터, 기본: `http://localhost:11434`) |
+| `OLLAMA_MODEL` | 선택 | Ollama 모델명 (기본: `exaone3.5:7.8b`) |
+| `LLM_MODEL` | 선택 | Claude 모델 (기본: `claude-sonnet-4-6`) |
+| `ALLOWED_ORIGINS` | 선택 | CORS (기본: `http://localhost:3000`) |
 
 ---
 
-## Priority
+## 참고 문서
 
-1. **실행 검증** — 프론트 mock 모드, 백엔드 `/docs`, Redis 없는 상태의 fallback 확인
-2. **실데이터 연결** — `REACT_APP_USE_MOCK=false`로 검색/상세 페이지 E2E 검증
-3. **Redis 안정화** — registry, price, history, news 캐시 TTL과 장애 fallback 점검
-4. **API 명세 대조** — Notion API 명세 block과 Swagger 응답 모델 비교
-5. **DB 방향 결정** — SQLite 유지, Supabase Postgres 도입, 또는 Redis 중심 유지 중 선택
-6. **영구 저장 구현** — 뉴스/요약/관계 분석 결과를 SQLAlchemy 모델과 연결
-7. **테스트 추가** — 서비스 함수 fallback, API 응답 스키마, 프론트 API 모드 검증
+[`readme/`](./readme/) 폴더에 세부 설계 문서가 있습니다.
+
+- [CLAUDE_CONTEXT.md](./readme/CLAUDE_CONTEXT.md) — 초기 아키텍처 설계 (한국어)
+- [MONITORING.md](./readme/MONITORING.md) — 관측성·Prometheus 설정
+- [News_README.md](./readme/News_README.md) — 뉴스 영향 분석 모듈 설계
+- [Relation_README.md](./readme/Relation_README.md) — 기업 관계 모듈 설계
+- [EVALUATION.md](./readme/EVALUATION.md) — 백테스트 및 평가 시스템
+- [backtest.md](./readme/backtest.md) — 백테스트 실행 가이드
+- [backtestPatch.md](./readme/backtestPatch.md) — 백테스트 패치 노트

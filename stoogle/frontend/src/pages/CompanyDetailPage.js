@@ -1,3 +1,4 @@
+// CompanyDetailPage
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
@@ -37,8 +38,6 @@ const styles = {
   },
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' },
   spinner: { padding: '80px 0', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '15px' },
-
-  // discovery_status="pending" 상태 카드
   pendingCard: {
     background: 'var(--color-surface)',
     border: '1px solid var(--color-border)',
@@ -68,7 +67,6 @@ const styles = {
   },
 };
 
-// CSS 애니메이션을 인라인으로 주입
 if (typeof document !== 'undefined' && !document.getElementById('stoogle-spin-style')) {
   const styleEl = document.createElement('style');
   styleEl.id = 'stoogle-spin-style';
@@ -79,6 +77,7 @@ if (typeof document !== 'undefined' && !document.getElementById('stoogle-spin-st
 const positive = { color: 'var(--color-negative)' };
 const negative = { color: 'var(--color-accent)' };
 
+// 숫자 포맷
 function fmt(n, suffix = '') {
   if (n == null) return '-';
   if (Math.abs(n) >= 1e12) return (n / 1e12).toFixed(1) + '조' + suffix;
@@ -86,6 +85,7 @@ function fmt(n, suffix = '') {
   return n.toLocaleString('ko-KR') + suffix;
 }
 
+// 발굴 중 카드
 function PendingRelationCard() {
   return (
     <div style={styles.pendingCard}>
@@ -100,6 +100,7 @@ function PendingRelationCard() {
   );
 }
 
+// 기업 상세
 export default function CompanyDetailPage() {
   const { ticker } = useParams();
   const [insight, setInsight] = useState(null);
@@ -135,10 +136,8 @@ export default function CompanyDetailPage() {
         const relData = relRes.data;
         setRelations(relData);
 
-        // impact는 relations API 응답에서 가져옴
         setImpact(relData.impact || []);
 
-        // discovery_status 처리
         setDiscoveryStatus(relData.discovery_status || 'ready');
       })
       .catch(console.error)
@@ -156,7 +155,6 @@ export default function CompanyDetailPage() {
       <TopBar />
       <div style={styles.body}>
 
-        {/* 헤더: 기업 기본 정보 + 주가 */}
         <div style={styles.header}>
           <div style={styles.headerTop}>
             <div>
@@ -195,14 +193,10 @@ export default function CompanyDetailPage() {
           {insight.summary && <div style={styles.summary}>{insight.summary}</div>}
         </div>
 
-        {/* 주가 차트 */}
         <PriceChart history={insight.price_history} name={insight.name} />
 
-        {/* 뉴스 */}
         <NewsSection news={news} />
 
-        {/* 관계 그래프 + 관계 목록 */}
-        {/* discovery_status가 pending이면 두 칸 모두 pending UI로 */}
         {isPending ? (
           <div style={styles.grid2}>
             <PendingRelationCard />
@@ -215,10 +209,8 @@ export default function CompanyDetailPage() {
           </div>
         )}
 
-        {/* 관계사 기반 영향 종목 */}
         <ImpactList items={impact} />
 
-        {/* AI 뉴스 분석 기반 영향 예측 종목 */}
         <AnalysisImpacts items={insight.analysis_impacts || []} />
 
       </div>

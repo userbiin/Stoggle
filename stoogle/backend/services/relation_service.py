@@ -1,9 +1,4 @@
-# 기업 관계 서비스
-#
-# 우선순위:
-#   1. RelationCache에 발굴된 관계(source=news|dart) → 실제 비즈니스 파트너
-#   2. RelationCache의 correlation 캐시 → 주 1회 계산된 상관계수
-#   3. Live Pearson 상관계수 계산 → 캐시 없을 때 폴백
+# 관계 서비스
 from typing import Optional
 import logging
 import numpy as np
@@ -21,31 +16,29 @@ _EDGE_TYPE_TO_KR = {
     "distributor": "공급망",
 }
 
-# Pearson 상관계수는 엣지 weight 보강 용도로만 사용 (관계 유형 분류 금지)
+
+# 상관계수 가중치 변환
 def _corr_to_weight(corr: float) -> float:
-    """상관계수를 엣지 weight(0~1)로 변환. 관계 유형 결정에는 사용하지 않는다."""
     return round(max(0.0, corr), 2)
 
 
+# 엣지 유형 한국어 변환
 def _edge_type_to_kr(edge_type: str) -> str:
     return _EDGE_TYPE_TO_KR.get(edge_type, "협력")
 
 
+# 종목명 조회
 def _get_name(ticker: str, registry: dict) -> str:
     return registry.get(ticker, {}).get("name", ticker)
 
 
+# 종가 시계열 조회
 def _fetch_close_series(
     ticker: str,
     days: int = 90,
     fromdate: Optional[str] = None,
     todate: Optional[str] = None,
 ) -> dict[str, float]:
-    """
-    종가 시계열을 반환한다.
-    fromdate/todate 가 주어지면 해당 기간으로 조회 (소급 분석용).
-    그 외엔 오늘 기준 최근 days일을 사용한다.
-    """
     try:
         if fromdate:
             from services.stock_service import get_price_history_range
@@ -63,6 +56,7 @@ def _fetch_close_series(
         return {}
 
 
+# 피어슨 상관계수
 def _pearson_corr(
     base_series: dict[str, float],
     candidate_series: dict[str, float],
@@ -86,16 +80,8 @@ def _pearson_corr(
     return None if np.isnan(corr) else corr
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# RelationCache 조회
-# ─────────────────────────────────────────────────────────────────────────────
-
+# 관계 캐시 조회
 def _load_relation_cache(ticker: str) -> list[dict]:
-    """
-    RelationCache에서 관계 목록을 조회한다.
-    발굴된 관계(news|dart)를 앞에, correlation 기반을 뒤에 정렬하여 반환.
-    같은 related_ticker가 여러 source로 존재하면 발굴 관계를 우선한다.
-    """
     try:
         from models.db_models import RelationCache, SessionLocal
 
@@ -109,7 +95,6 @@ def _load_relation_cache(ticker: str) -> list[dict]:
                 .all()
             )
 
-            # related_ticker 기준 중복 제거 — 발굴 관계 우선
             seen: dict[str, dict] = {}
             for row in rows:
                 rt = row.related_ticker
@@ -124,9 +109,8 @@ def _load_relation_cache(ticker: str) -> list[dict]:
                 if rt not in seen:
                     seen[rt] = entry
                 elif seen[rt]["source"] == "correlation" and source != "correlation":
-                    seen[rt] = entry  # 발굴 관계로 교체
+                    seen[rt] = entry
 
-            # 발굴 우선 정렬: news/dart → correlation
             items = sorted(
                 seen.values(),
                 key=lambda x: (0 if x["source"] != "correlation" else 1, -x["correlation"]),
@@ -139,8 +123,8 @@ def _load_relation_cache(ticker: str) -> list[dict]:
         return []
 
 
+# 발굴 관계 존재 여부
 def has_discovered_relations(ticker: str) -> bool:
-    """RelationCache에 발굴된 관계(news|dart)가 있으면 True."""
     try:
         from models.db_models import RelationCache, SessionLocal
 
@@ -161,9 +145,8 @@ def has_discovered_relations(ticker: str) -> bool:
         return False
 
 
+# 사업 관계 존재 여부
 def has_business_relations(ticker: str) -> bool:
-    """RelationCache(news|dart) 또는 company_edges에 실제 사업 관계가 있으면 True.
-    correlation 소스만 있는 경우는 '사업 관계 없음(pending)'으로 본다."""
     try:
         from models.db_models import RelationCache, CompanyEdge, SessionLocal
         from sqlalchemy import or_
@@ -192,21 +175,11 @@ def has_business_relations(ticker: str) -> bool:
         return False
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Correlation → RelationCache 저장 (update_relation_graphs 태스크용)
-# ─────────────────────────────────────────────────────────────────────────────
-
+# 상관계수 캐시 저장
 def save_correlations_to_cache(
     ticker: str,
     candidates: list[dict],
 ) -> int:
-    """
-    Pearson 상관계수 계산 결과를 RelationCache에 저장한다.
-    이미 발굴된 관계(source=news|dart)가 있는 종목은 덮어쓰지 않는다.
-
-    candidates: [{"ticker": str, "correlation": float, "relation_type": str}, ...]
-    Returns: 저장 수
-    """
     if not candidates:
         return 0
     try:
@@ -228,7 +201,6 @@ def save_correlations_to_cache(
 
                 existing_source = getattr(existing, "source", "correlation") if existing else None
 
-                # 발굴 관계가 이미 있으면 건너뜀
                 if existing_source in ("news", "dart"):
                     continue
 
@@ -261,15 +233,11 @@ def save_correlations_to_cache(
         return 0
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 관계 계산 (퍼블릭 API)
-# ─────────────────────────────────────────────────────────────────────────────
-
+# 관계 계산
 def compute_relations(
     ticker: str,
     candidate_tickers: Optional[list[str]] = None,
 ) -> dict:
-    """비즈니스 관계사 = 발굴 관계(news|dart) ∪ company_edges 이웃. correlation은 절대 사용 안 함."""
     from services.stock_service import get_or_build_registry
 
     registry = get_or_build_registry()
@@ -279,10 +247,8 @@ def compute_relations(
     related: list[RelatedCompany] = []
 
     cached = _load_relation_cache(ticker)
-    # correlation 소스는 비즈니스 관계사에서 제외
     candidates = [r for r in cached if r["source"] != "correlation"]
 
-    # 부족하면 company_edges 그래프 이웃으로 보강 (Pearson 폴백 없음)
     if len(candidates) < 9:
         seen = {c["ticker"] for c in candidates}
         for n in _get_neighbors_from_edges(ticker):
@@ -293,7 +259,6 @@ def compute_relations(
             if len(candidates) >= 9:
                 break
 
-    # 둘 다 없으면 빈 목록 → 라우터 게이트와 일관되게 "없으면 없다"
     for i, item in enumerate(candidates[:9]):
         cand = item["ticker"]
         cand_name = _get_name(cand, registry)
@@ -313,19 +278,12 @@ def compute_relations(
     return {"nodes": nodes, "links": links, "related_companies": related[:5]}
 
 
+# 엣지 이웃 조회
 def _get_neighbors_from_edges(
     ticker: str,
     max_hops: int = 2,
     max_results: int = 20,
 ) -> list[dict]:
-    """
-    company_edges에서 1~2홉 이웃 종목을 가져온다.
-
-    Redis 캐시 → DB 쿼리 순서로 조회한다.
-    가격 상관계수 기반 후보 생성 대신 실제 사업 관계 그래프를 탐색하므로
-    KOSPI200 시총 순서와 무관하게 비대형주도 후보에 포함된다.
-    """
-    # Redis 캐시 우선 조회 (TTL_EDGES = 24h, update_relation_graphs 시 무효화)
     try:
         from services.cache_service import get_edges_cache, set_edges_cache
         cached = get_edges_cache(ticker)
@@ -362,7 +320,6 @@ def _get_neighbors_from_edges(
                 if neighbor not in neighbors or entry["correlation"] > neighbors[neighbor]["correlation"]:
                     neighbors[neighbor] = entry
 
-            # 2홉: 결과가 부족하면 1홉 이웃의 이웃도 포함
             if len(neighbors) < max_results and max_hops >= 2:
                 hop1_tickers = list(neighbors.keys())
                 for h1 in hop1_tickers:
@@ -393,7 +350,6 @@ def _get_neighbors_from_edges(
 
             result = sorted(neighbors.values(), key=lambda x: -x["correlation"])[:max_results]
 
-            # Redis에 저장 (다음 요청부터 DB 쿼리 생략)
             try:
                 from services.cache_service import set_edges_cache
                 set_edges_cache(ticker, result)
@@ -408,20 +364,12 @@ def _get_neighbors_from_edges(
         return []
 
 
+# 상관계수 계산 및 저장
 def compute_correlations_only(
     ticker: str,
     fromdate: Optional[str] = None,
     todate: Optional[str] = None,
 ) -> int:
-    """
-    단일 종목에 대해 KOSPI200 후보 종목들과의 상관계수를 계산하고
-    RelationCache에 저장(발굴 관계를 덮어쓰지 않음)한다.
-    상관계수는 관계 유형 분류에 사용하지 않으며 weight 보강 목적으로만 저장한다.
-
-    fromdate/todate: 소급 분석 시 임의 기간 지정 (YYYYMMDD 또는 YYYY-MM-DD).
-                    미지정 시 최근 90일 기준.
-    반환값: 저장된 상관계수 수
-    """
     from services.kospi200 import KOSPI200_TICKERS
 
     candidate_tickers = [t for t in KOSPI200_TICKERS if t != ticker]
@@ -438,24 +386,14 @@ def compute_correlations_only(
             computed.append({
                 "ticker": cand,
                 "correlation": corr,
-                # 상관계수 기반 관계 유형 분류 제거 — "관심"으로 고정
                 "relation_type": "관심",
             })
 
     return save_correlations_to_cache(ticker, computed)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Impact 추론
-# ─────────────────────────────────────────────────────────────────────────────
-
+# 영향 추론
 async def compute_impact(ticker: str) -> list[ImpactItem]:
-    """뉴스 기반 영향 종목 추론 (비즈니스 관계사 UI와 독립).
-
-    후보 풀: company_edges 1~2홉 이웃 → 없으면 발굴 관계(news|dart) → 그래도 없으면 [].
-    (correlation 전용 관계는 후보에서 제외)
-    compute_relations 중복 호출 없음.
-    """
     from services.news_service import fetch_news, rank_news
     from services.stock_service import get_or_build_registry
     from agents.news_agent import run_impact_analysis
@@ -469,7 +407,6 @@ async def compute_impact(ticker: str) -> list[ImpactItem]:
     if not news_titles:
         return []
 
-    # 후보 풀: 사업 관계 그래프 이웃 (비대형주 포함)
     candidates = _get_neighbors_from_edges(ticker)
     if not candidates:
         cached = _load_relation_cache(ticker)

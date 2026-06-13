@@ -1,6 +1,4 @@
-"""
-키워드 추출 + LLM 요약 서비스
-"""
+# NLP 서비스
 import os
 import re
 from collections import Counter
@@ -14,7 +12,6 @@ try:
 except ImportError:
     ANTHROPIC_AVAILABLE = False
 
-# JVM을 konlpy보다 먼저 시작하여 Restricted Method 경고를 억제
 try:
     import jpype
     if not jpype.isJVMStarted():
@@ -33,16 +30,13 @@ except Exception:
     OKT_AVAILABLE = False
 
 
-# 주식 도메인 불용어 (일반 명사지만 인사이트 가치 없음)
 _STOCK_STOPWORDS = {
-    # 동작/상태 명사
     "흐름", "형성", "강화", "집중", "매수", "추천", "강세", "상승률",
     "움직임", "전망", "분석", "영향", "관련", "기반", "진행", "확대",
     "증가", "감소", "하락", "상승", "급등", "급락", "회복", "둔화",
     "지속", "유지", "개선", "악화", "부진", "호조", "부담", "우려",
     "기대", "가능", "예상", "전일", "오전", "오후", "이날", "최근",
     "현재", "올해", "내년", "지난해", "올해", "분기", "하반기", "상반기",
-    # 너무 일반적인 명사
     "시장", "주가", "종목", "투자", "기업", "업체", "회사", "사업",
     "실적", "수익", "매출", "영업", "이익", "비용", "수요", "공급",
     "가격", "거래", "규모", "수준", "대비", "이상", "이하", "기준",
@@ -50,6 +44,7 @@ _STOCK_STOPWORDS = {
 }
 
 
+# 키워드 추출
 def extract_keywords(texts: list[str], top_n: int = 15) -> list[Keyword]:
     combined = " ".join(texts)
     if not combined.strip():
@@ -58,7 +53,6 @@ def extract_keywords(texts: list[str], top_n: int = 15) -> list[Keyword]:
     if OKT_AVAILABLE:
         try:
             okt = Okt()
-            # 명사만, 2글자 이상, 불용어 제거
             nouns = [
                 n for n in okt.nouns(combined)
                 if len(n) >= 2 and n not in _STOCK_STOPWORDS
@@ -69,10 +63,9 @@ def extract_keywords(texts: list[str], top_n: int = 15) -> list[Keyword]:
         nouns = _regex_nouns(combined)
 
     counter = Counter(nouns)
-    
-    # 1회만 등장한 단어 제거 (노이즈)
+
     counter = Counter({k: v for k, v in counter.items() if v >= 2})
-    
+
     most_common = counter.most_common(top_n)
     if not most_common:
         return []
@@ -84,6 +77,7 @@ def extract_keywords(texts: list[str], top_n: int = 15) -> list[Keyword]:
     ]
 
 
+# 정규식 명사 추출
 def _regex_nouns(text: str) -> list[str]:
     stopwords = {
         "있는", "없는", "이번", "지난", "위한", "통해", "대한", "관련",
@@ -93,16 +87,11 @@ def _regex_nouns(text: str) -> list[str]:
     return [t for t in tokens if t not in stopwords]
 
 
-
+# DB 요약 캐시 조회
 def _get_cached_article_summary(
     ticker: str,
     urls: Optional[list[str]] = None,
 ) -> Optional[str]:
-    """
-    NewsCache DB에서 summary_agent가 저장한 요약을 조회한다.
-    urls 지정 시 해당 URL 중 최신 요약 반환, 없으면 ticker 기준 최신 요약 반환.
-    DB 오류 시 None 반환 (non-blocking).
-    """
     try:
         from models.db_models import NewsCache, SessionLocal
 
@@ -123,24 +112,17 @@ def _get_cached_article_summary(
         return None
 
 
+# LLM 요약 생성
 async def summarize_with_llm(
     ticker: str,
     company_name: str,
     news_titles: list[str],
     news_urls: Optional[list[str]] = None,
 ) -> Optional[str]:
-    """
-    뉴스 요약 생성. 3단계 우선순위:
-      1. NewsCache DB — summary_agent가 저장한 기사 요약 (DB 우선)
-      2. summary_agent.run() on-demand — news_urls 제공 시 실시간 요약
-      3. Claude 직접 호출 — 헤드라인 기반 투자 인사이트 (fallback)
-    """
-    # 1단계: DB 캐시 (summary_agent Celery 배치 결과)
     cached = _get_cached_article_summary(ticker, news_urls)
     if cached:
         return cached
 
-    # 2단계: summary_agent on-demand (URL 제공 시)
     if news_urls:
         from agents.summary_agent import run as summary_run
         for url in news_urls[:3]:
@@ -151,7 +133,6 @@ async def summarize_with_llm(
             except Exception:
                 pass
 
-    # 3단계: Claude 직접 호출 — 헤드라인 기반 인사이트 (기존 로직)
     if not ANTHROPIC_AVAILABLE or not os.getenv("ANTHROPIC_API_KEY"):
         return _fallback_summary(company_name, news_titles)
 
@@ -178,12 +159,13 @@ async def summarize_with_llm(
         return _fallback_summary(company_name, news_titles)
 
 
+# 헤딩 제거
 def _strip_headings(text: str) -> str:
-    """LLM이 추가한 마크다운 헤딩(# 으로 시작하는 줄)을 제거."""
     lines = [line for line in text.splitlines() if not line.strip().startswith("#")]
     return "\n".join(lines).strip()
 
 
+# 폴백 요약
 def _fallback_summary(company_name: str, titles: list[str]) -> str:
     if not titles:
         return f"{company_name}에 대한 최근 뉴스를 찾을 수 없습니다."

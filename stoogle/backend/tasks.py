@@ -567,14 +567,9 @@ def crawl_all_news(self):
     if news_for_dedup:
         dedup_and_index_news.delay(news_for_dedup)
 
-    # 신규 뉴스가 쌓인 종목에 대해 관계 증분 갱신 트리거
-    # (새 공급사·고객사 뉴스가 들어오면 다음 크롤 주기에 관계에 반영됨)
+    # 신규 뉴스가 있는 종목에 대해 분석 + 관계 발굴 트리거
+    # analyze_single_ticker 가 run_and_save + discover_relations 를 모두 처리
     updated_tickers = [t for t, cnt in results.items() if cnt > 0]
-    if updated_tickers:
-        _trigger_incremental_relation_update.delay(updated_tickers)
-
-    # 신규 뉴스가 있는 종목에 대해 analysis_agent 분석 트리거
-    # 뉴스는 이미 Redis에 캐싱됐으므로 재크롤 없이 LLM 분석만 실행됨
     for ticker in updated_tickers:
         analyze_single_ticker.delay(ticker)
 
@@ -678,24 +673,6 @@ def run_exaone_news_pipeline(self):
 
     logger.info("Ollama 파이프라인 완료: %d건 → %d 종목 캐시 갱신", len(pipeline_results), len(updated))
     return {"status": "ok", "inserted": updated}
-
-
-@app.task
-def _trigger_incremental_relation_update(tickers: list[str]):
-    """
-    뉴스 크롤 후 신규 기사가 있는 종목의 관계를 증분 갱신한다.
-    소급 배치(`retroactive_relation_seed`)와 달리 최신 뉴스 15건만 빠르게 처리.
-    """
-    from agents.relation_discovery_agent import discover_relations
-    from services.cache_service import invalidate_edges_cache
-
-    for ticker in tickers:
-        try:
-            count = asyncio.run(discover_relations(ticker))
-            if count > 0:
-                invalidate_edges_cache(ticker)
-        except Exception as e:
-            logger.debug("[%s] 증분 관계 갱신 실패: %s", ticker, e)
 
 
 @app.task(bind=True, max_retries=1, default_retry_delay=60)

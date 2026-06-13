@@ -1,13 +1,13 @@
+// RelationList
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
-// 백엔드 relation_type 값과 매핑
 const RELATION_TYPE_STYLE = {
   '공급망': { bg: '#fff3e0', color: '#e37400', label: '공급망' },
   '협력':   { bg: '#e8f5e9', color: '#137333', label: '협력' },
   '경쟁':   { bg: '#fce8e6', color: '#c5221f', label: '경쟁' },
   '계열사': { bg: '#e8f0fe', color: '#1a73e8', label: '계열사' },
-  '계열':   { bg: '#e8f0fe', color: '#1a73e8', label: '계열사' }, // 구버전 호환
+  '계열':   { bg: '#e8f0fe', color: '#1a73e8', label: '계열사' },
   '관심':   { bg: '#f1f3f4', color: '#5f6368', label: '관심' },
 };
 
@@ -48,12 +48,13 @@ const styles = {
   empty: { padding: '24px 0', textAlign: 'center', color: 'var(--color-text-muted)', fontSize: '13px' },
 };
 
-// reason 앞에 붙는 "[supplier]" 같은 내부 태그 제거
+// 태그 제거
 function cleanReason(reason) {
   if (!reason) return '';
   return reason.replace(/^\[.*?\]\s*/, '');
 }
 
+// 관계 목록
 export default function RelationList({ companies = [] }) {
   const navigate = useNavigate();
 

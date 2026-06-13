@@ -1,3 +1,4 @@
+// SearchResultsPage
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
@@ -29,6 +30,7 @@ const styles = {
   spinner: { padding: '60px 0', textAlign: 'center', color: 'var(--color-text-muted)' },
 };
 
+// 검색 결과
 export default function SearchResultsPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -51,7 +53,9 @@ export default function SearchResultsPage() {
       .finally(() => setLoading(false));
   }, [query]);
 
+  // 가격 포맷
   const fmtPrice = (p) => p?.toLocaleString('ko-KR') + '원';
+  // 등락 포맷
   const fmtChange = (c) => (c >= 0 ? '+' : '') + c?.toFixed(2) + '%';
 
   return (

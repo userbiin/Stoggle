@@ -1,3 +1,4 @@
+// MainPage
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -66,43 +67,22 @@ const styles = {
     transition: 'background var(--transition)',
     whiteSpace: 'nowrap',
   },
-  hints: {
-    marginTop: '16px',
-    display: 'flex',
-    gap: '8px',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-  },
-  hintChip: {
-    background: 'var(--color-accent-light)',
-    color: 'var(--color-accent)',
-    border: 'none',
-    borderRadius: '9999px',
-    padding: '4px 14px',
-    fontSize: '13px',
-    cursor: 'pointer',
-  },
-  footer: {
-    position: 'fixed',
-    bottom: '20px',
-    fontSize: '13px',
-    color: 'var(--color-text-muted)',
-  },
 };
 
-const HINT_QUERIES = [];
-
+// 메인 페이지
 export default function MainPage() {
   const [query, setQuery] = useState('');
   const [focused, setFocused] = useState(false);
   const navigate = useNavigate();
 
+  // 검색 실행
   const handleSearch = (q) => {
     const term = (q || query).trim();
     if (!term) return;
     navigate(`/search?q=${encodeURIComponent(term)}`);
   };
 
+  // 키 입력
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') handleSearch();
   };
@@ -130,14 +110,6 @@ export default function MainPage() {
         <button style={styles.searchBtn} onClick={() => handleSearch()}>
           검색
         </button>
-      </div>
-
-      <div style={styles.hints}>
-        {HINT_QUERIES.map((q) => (
-          <button key={q} style={styles.hintChip} onClick={() => handleSearch(q)}>
-            {q}
-          </button>
-        ))}
       </div>
 
 

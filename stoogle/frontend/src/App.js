@@ -1,9 +1,11 @@
+// App
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import MainPage from './pages/MainPage';
 import SearchResultsPage from './pages/SearchResultsPage';
 import CompanyDetailPage from './pages/CompanyDetailPage';
 
+// 앱
 export default function App() {
   return (
     <BrowserRouter>

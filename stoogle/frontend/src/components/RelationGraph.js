@@ -1,3 +1,4 @@
+// RelationGraph
 import React, { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
 import { useNavigate } from 'react-router-dom';
@@ -54,6 +55,7 @@ const styles = {
   svg: { width: '100%', cursor: 'grab' },
 };
 
+// 관계 그래프
 export default function RelationGraph({ data, centerId }) {
   const svgRef = useRef(null);
   const navigate = useNavigate();
@@ -71,7 +73,6 @@ export default function RelationGraph({ data, centerId }) {
 
     if (nodes.length === 0) return;
 
-    // ── Defs ─────────────────────────────────────────────────────────────
     const defs = svg.append('defs');
 
     const shadowFilter = defs.append('filter')
@@ -83,10 +84,8 @@ export default function RelationGraph({ data, centerId }) {
       .attr('stdDeviation', 3)
       .attr('flood-color', '#00000018');
 
-    // Node radius helper
     const getR = (d) => d.id === centerId ? 22 : Math.min(17, Math.max(12, d.size / 2));
 
-    // Build relation type lookup: nodeId → relationType
     const nodeRelType = {};
     links.forEach((l) => {
       const s = typeof l.source === 'object' ? l.source.id : l.source;
@@ -95,7 +94,6 @@ export default function RelationGraph({ data, centerId }) {
       if (t === centerId) nodeRelType[s] = l.type;
     });
 
-    // ── Zoom ──────────────────────────────────────────────────────────────
     const g = svg.append('g');
     svg.call(
       d3.zoom().scaleExtent([0.4, 3]).on('zoom', (event) => {
@@ -103,14 +101,12 @@ export default function RelationGraph({ data, centerId }) {
       })
     );
 
-    // ── Simulation ────────────────────────────────────────────────────────
     const sim = d3.forceSimulation(nodes)
       .force('link', d3.forceLink(links).id((d) => d.id).distance(115))
       .force('charge', d3.forceManyBody().strength(-320))
       .force('center', d3.forceCenter(W / 2, H / 2))
       .force('collision', d3.forceCollide().radius((d) => getR(d) + 14));
 
-    // ── Links ─────────────────────────────────────────────────────────────
     const link = g.append('g')
       .selectAll('path')
       .data(links)
@@ -121,7 +117,6 @@ export default function RelationGraph({ data, centerId }) {
       .attr('stroke-opacity', 0.45)
       .attr('stroke-linecap', 'round');
 
-    // ── Nodes ─────────────────────────────────────────────────────────────
     const nodeG = g.append('g')
       .selectAll('g')
       .data(nodes)
@@ -164,7 +159,6 @@ export default function RelationGraph({ data, centerId }) {
       .attr('stroke-width', (d) => d.id === centerId ? 2 : 1.5)
       .attr('filter', 'url(#node-shadow)');
 
-    // Center node: label inside circle
     nodeG.filter((d) => d.id === centerId)
       .append('text')
       .text((d) => d.name.length > 4 ? d.name.slice(0, 4) : d.name)
@@ -175,7 +169,6 @@ export default function RelationGraph({ data, centerId }) {
       .style('fill', '#fff')
       .style('pointer-events', 'none');
 
-    // Other nodes: label below circle
     nodeG.filter((d) => d.id !== centerId)
       .append('text')
       .text((d) => d.name)
@@ -186,7 +179,6 @@ export default function RelationGraph({ data, centerId }) {
       .style('fill', '#5f6368')
       .style('pointer-events', 'none');
 
-    // ── Tick ──────────────────────────────────────────────────────────────
     sim.on('tick', () => {
       link.attr('d', (d) => {
         const sx = d.source.x, sy = d.source.y;

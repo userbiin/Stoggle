@@ -19,7 +19,7 @@ import requests as _requests
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 공통 데이터 타입 (naver_section_crawler, news_aggregator에서 재사용)
+# 공통 데이터 타입 (naver_section_crawler 에서 재사용)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @dataclass

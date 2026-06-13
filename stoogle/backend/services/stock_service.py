@@ -1,11 +1,4 @@
-"""
-pykrx를 이용한 주가 데이터 수집 서비스
-
-검색 흐름:
-  1. Redis 레지스트리 조회 → O(1) 이름 매칭
-  2. 레지스트리 없으면 pykrx 풀스캔 후 Redis에 저장 (초기 1회만)
-  3. 가격 데이터도 Redis 캐시 우선, 없으면 pykrx 호출
-"""
+# 주가 서비스
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
@@ -29,16 +22,18 @@ from services.cache_service import (
 )
 
 
-
+# 오늘 날짜
 def _today() -> str:
     return datetime.today().strftime("%Y%m%d")
 
 
+# N일 전 날짜
 def _n_days_ago(n: int) -> str:
     return (datetime.today() - timedelta(days=n)).strftime("%Y%m%d")
 
 
-def _is_trading_hours() -> bool: # 장 중 여부 판별 (평일 09:00 ~ 15:00)
+# 장중 여부
+def _is_trading_hours() -> bool:
     now = datetime.now()
     return (
         now.weekday() < 5
@@ -46,18 +41,18 @@ def _is_trading_hours() -> bool: # 장 중 여부 판별 (평일 09:00 ~ 15:00)
     )
 
 
+# 가격 캐시 TTL
 def _cache_ttl_for_price() -> int:
-    """장 중이면 60초, 장외(주말·야간)면 48시간"""
     return 60 if _is_trading_hours() else 60 * 60 * 48
 
 
+# 히스토리 캐시 TTL
 def _cache_ttl_for_history() -> int:
-    """장 중이면 10분, 장외면 24시간"""
     return 600 if _is_trading_hours() else 60 * 60 * 24
 
 
+# 종목코드 정규화
 def _normalize_ticker(value) -> Optional[str]:
-    """pykrx/pandas 반환값에서 6자리 종목코드 문자열을 안전하게 추출."""
     if value is None:
         return None
 
@@ -80,8 +75,8 @@ def _normalize_ticker(value) -> Optional[str]:
     return text if text else None
 
 
+# 종목코드 리스트 정규화
 def _normalize_ticker_list(raw) -> list[str]:
-    """list/Index/DataFrame 등 pykrx 반환 형태를 종목코드 리스트로 정규화."""
     if raw is None:
         return []
 
@@ -124,8 +119,8 @@ def _normalize_ticker_list(raw) -> list[str]:
     ]
 
 
+# 종목명 보정
 def _coerce_company_name(value, ticker: str) -> str:
-    """종목명 반환값이 DataFrame/Series여도 검색 가능한 문자열로 보정."""
     if value is None:
         return ticker
 
@@ -152,6 +147,7 @@ def _coerce_company_name(value, ticker: str) -> str:
     return text if text and text != "nan" else ticker
 
 
+# 종목명 조회
 def _get_ticker_name(ticker: str) -> str:
     if not PYKRX_AVAILABLE:
         return ticker
@@ -162,22 +158,13 @@ def _get_ticker_name(ticker: str) -> str:
         return ticker
 
 
-# ---------------------------------------------------------------------------
-# 종목 레지스트리 (ticker → {ticker, name, market})
-# ---------------------------------------------------------------------------
-
+# 업종 맵 조회
 def _get_sector_map(market: str, date_str: str) -> dict[str, str]:
-    """
-    pykrx에서 시장별 업종 분류 맵을 조회한다.
-    반환: {ticker: sector_name}
-    실패 시 빈 딕셔너리 반환 (레지스트리 구축 중단 방지).
-    """
     try:
         df = pykrx_stock.get_market_sector_classifications(date_str, market=market)
         if df is None or df.empty:
             return {}
 
-        # pykrx 반환 컬럼에서 업종명 컬럼을 동적으로 탐색
         sector_col = next(
             (c for c in df.columns if "업종" in c or "sector" in c.lower()),
             None,
@@ -196,6 +183,7 @@ def _get_sector_map(market: str, date_str: str) -> dict[str, str]:
         return {}
 
 
+# 레지스트리 구축
 def build_ticker_registry() -> dict:
     if not PYKRX_AVAILABLE:
         return {}
@@ -212,7 +200,6 @@ def build_ticker_registry() -> dict:
             logger.warning(f"{market} 종목 리스트 조회 실패: {e}")
             tickers = []
 
-        # 업종 정보 일괄 조회 (실패해도 레지스트리 구축 계속)
         sector_map = _get_sector_map(market, today)
 
         for ticker in tickers:
@@ -224,21 +211,19 @@ def build_ticker_registry() -> dict:
                 "sector": sector_map.get(ticker, ""),
             }
 
-    # get_market_ticker_list 가 빈 결과를 반환하는 환경(KRX API 제한 등)에 대한 fallback
     if not registry:
-        # KOSPI200 30종목 fallback은 발굴 종목코드 해석에 부족 → ticker_map.json seed 우선
         import json, os
         seed_path = os.getenv("TICKER_MAP_PATH", "ticker_map.json")
         try:
             with open(seed_path, encoding="utf-8") as f:
                 seed = json.load(f)
             for k, v in seed.items():
-                if isinstance(v, dict):          # {"005930": {"name": "삼성전자", ...}}
+                if isinstance(v, dict):
                     tk = v.get("ticker") or k
                     registry[tk] = {"ticker": tk, "name": v.get("name", tk),
                                     "market": v.get("market", "KOSPI"),
                                     "sector": v.get("sector", "")}
-                else:                            # {"삼성전자": "005930"}
+                else:
                     tk = str(v).zfill(6)
                     registry[tk] = {"ticker": tk, "name": k,
                                     "market": "KOSPI", "sector": ""}
@@ -253,8 +238,8 @@ def build_ticker_registry() -> dict:
     return registry
 
 
+# 레지스트리 조회 또는 구축
 def get_or_build_registry() -> dict:
-    """Redis에서 레지스트리 조회, 없으면 pykrx로 구축 후 캐싱."""
     cached = get_ticker_registry()
     if cached:
         return cached
@@ -266,15 +251,8 @@ def get_or_build_registry() -> dict:
     return registry
 
 
-# ---------------------------------------------------------------------------
-# 주가 히스토리
-# ---------------------------------------------------------------------------
-
+# 주가 히스토리 조회
 def get_price_history(ticker: str, days: int = 90) -> list[PricePoint]:
-    """
-    주가 히스토리 조회. Redis 캐시 → pykrx 순으로 시도.
-    """
-    # 캐시 확인 (days=90 고정 키 사용, 더 짧은 요청엔 슬라이스)
     cached = get_history_cache(ticker)
     if cached is not None:
         points = [PricePoint(**p) for p in cached]
@@ -308,20 +286,12 @@ def get_price_history(ticker: str, days: int = 90) -> list[PricePoint]:
         return []
 
 
+# 기간별 히스토리 조회
 def get_price_history_range(
     ticker: str,
     fromdate: str,
     todate: Optional[str] = None,
 ) -> list[PricePoint]:
-    """
-    임의 기간 주가 히스토리 조회 (소급 분석·성능 평가 전용, Redis 미사용).
-
-    pykrx ≥1.2.8 기준:
-      - adjusted=True(기본): Naver 소스 → KRX 2년 제한 없음, 상장 이후 전체 조회 가능
-      - adjusted=False: KRX 소스 → 내부 730일 청크 분할 + 1초 sleep 처리됨
-
-    fromdate / todate: YYYYMMDD 또는 YYYY-MM-DD 형식 모두 허용
-    """
     if not PYKRX_AVAILABLE:
         return []
 
@@ -351,17 +321,8 @@ def get_price_history_range(
         return []
 
 
-# ---------------------------------------------------------------------------
-# 특정 날짜 종가 (백테스트용)
-# ---------------------------------------------------------------------------
-
+# 특정일 종가 조회
 def get_close_price_on(ticker: str, as_of) -> Optional[float]:
-    """
-    as_of 날짜의 종가를 반환한다. 휴장일이면 직전 거래일 종가로 대체.
-
-    as_of: datetime 또는 'YYYY-MM-DD' 문자열 모두 허용.
-    백테스트의 base_price 박제 목적으로 사용 — Redis 캐시 미사용.
-    """
     if not PYKRX_AVAILABLE:
         return None
     try:
@@ -370,7 +331,6 @@ def get_close_price_on(ticker: str, as_of) -> Optional[float]:
             from datetime import datetime as _dt
             as_of = _dt.strptime(as_of[:10], "%Y-%m-%d")
         end_str = as_of.strftime("%Y%m%d")
-        # 7일 앞에서부터 조회해 직전 거래일 종가를 마지막 행으로 선택
         start_str = (as_of - _td(days=7)).strftime("%Y%m%d")
         df = pykrx_stock.get_market_ohlcv_by_date(
             fromdate=start_str, todate=end_str, ticker=ticker
@@ -383,14 +343,8 @@ def get_close_price_on(ticker: str, as_of) -> Optional[float]:
         return None
 
 
-# ---------------------------------------------------------------------------
-# 현재가
-# ---------------------------------------------------------------------------
-
+# 현재가 조회
 def get_current_price(ticker: str) -> Optional[dict]:
-    """
-    현재가 + 등락률 조회 Redis 캐시(60초) → pykrx
-    """
     cached = get_price_cache(ticker)
     if cached is not None:
         return cached
@@ -428,20 +382,8 @@ def get_current_price(ticker: str) -> Optional[dict]:
         return None
 
 
-# ---------------------------------------------------------------------------
-# 시총 · 펀더멘털
-# ---------------------------------------------------------------------------
-
+# 시총 및 펀더멘털 조회
 def get_market_cap_info(ticker: str) -> Optional[dict]:
-    """
-    시총·PER·PBR·EPS 조회.
-
-    pykrx get_market_fundamental_by_date 가 KRX API 변경으로 빈 DataFrame을 반환하므로
-    Naver Finance polling API를 기본 소스로 사용한다.
-    - PER = 현재가 / EPS
-    - PBR = 현재가 / BPS
-    - 시가총액 = 현재가 × 상장주식수
-    """
     try:
         import httpx
 
@@ -470,10 +412,10 @@ def get_market_cap_info(ticker: str) -> Optional[dict]:
             except (TypeError, ValueError):
                 return None
 
-        price = _f("nv")           # 현재가
-        eps = _f("eps")            # 주당순이익
-        bps = _f("bps")            # 주당순자산
-        shares = _f("countOfListedStock")  # 상장주식수
+        price = _f("nv")
+        eps = _f("eps")
+        bps = _f("bps")
+        shares = _f("countOfListedStock")
 
         def _div(a, b) -> Optional[float]:
             if a is None or b is None or b == 0:
@@ -491,18 +433,8 @@ def get_market_cap_info(ticker: str) -> Optional[dict]:
         return None
 
 
-# ---------------------------------------------------------------------------
-# 종목 검색 (레지스트리 기반 O(1))
-# ---------------------------------------------------------------------------
-
+# 종목 검색
 def search_companies(query: str) -> list[CompanyBrief]:
-    """
-    종목명 또는 종목코드로 기업 검색.
-
-    Redis 레지스트리를 활용하여 O(N_matches) 로 검색한 뒤
-    매칭 종목에 대해서만 현재가를 조회한다.
-    (구 방식: 전종목 루프 × API 호출 → 수 분 소요)
-    """
     query = query.strip()
     registry = get_or_build_registry()
 
@@ -525,19 +457,14 @@ def search_companies(query: str) -> list[CompanyBrief]:
             if len(results) >= 20:
                 break
 
-    # 정확 일치(종목코드 or 이름)를 최상위로 정렬
     results.sort(key=lambda r: (
         0 if r.ticker == query or r.name == query else 1
     ))
     return results
 
 
-# ---------------------------------------------------------------------------
-# 단일 종목 메타 조회 (ticker → CompanyBrief)
-# ---------------------------------------------------------------------------
-
+# 단일 종목 조회
 def get_company_brief(ticker: str) -> Optional[CompanyBrief]:
-    """레지스트리에서 단일 종목 정보를 반환한다."""
     registry = get_or_build_registry()
     meta = registry.get(ticker.upper())
     if not meta:

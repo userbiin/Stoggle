@@ -1,3 +1,4 @@
+// PriceChart
 import React from 'react';
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis,
@@ -12,6 +13,7 @@ const styles = {
   title: { fontSize: '15px', fontWeight: '600', color: 'var(--color-text-primary)', marginBottom: '16px' },
 };
 
+// 툴팁
 const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
@@ -30,6 +32,7 @@ const CustomTooltip = ({ active, payload }) => {
   );
 };
 
+// 주가 차트
 export default function PriceChart({ history = [], name = '' }) {
   const data = history;
   const prices = data.map((d) => d.close);
@@ -40,6 +43,7 @@ export default function PriceChart({ history = [], name = '' }) {
   const isUp = lastClose >= firstClose;
   const color = isUp ? '#c5221f' : '#1a73e8';
 
+  // Y축 눈금 포맷
   const tickFormatter = (val) => {
     if (val >= 1e4) return (val / 1e4).toFixed(0) + '만';
     return val?.toLocaleString('ko-KR');

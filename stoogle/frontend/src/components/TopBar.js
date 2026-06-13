@@ -1,3 +1,4 @@
+// TopBar
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -39,10 +40,12 @@ const styles = {
   },
 };
 
+// 상단 바
 export default function TopBar({ initialQuery = '' }) {
   const [query, setQuery] = useState(initialQuery);
   const navigate = useNavigate();
 
+  // 검색 실행
   const handleSearch = () => {
     const term = query.trim();
     if (!term) return;
