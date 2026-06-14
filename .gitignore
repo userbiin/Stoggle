@@ -48,3 +48,6 @@ celerybeat.pid
 logs/
 log/
 eval.txt
+
+# Claude Code 내부 디렉토리
+.claude/worktrees/
