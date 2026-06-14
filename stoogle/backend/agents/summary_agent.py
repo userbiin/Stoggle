@@ -1,6 +1,4 @@
-"""
-기사 URL을 받아 본문 추출 → LLM 요약 → news_cache 업데이트
-"""
+# 요약 에이전트
 import os
 import re
 import logging
@@ -54,11 +52,6 @@ def _extract_body(html: str) -> str:
 
 
 def _quality_score(body: str) -> float:
-    """
-    본문 길이와 문장 완성도 기반 품질 점수 (0.0~1.0)
-    - 길이 점수: 300자 이상이면 만점
-    - 문장 완성도: 마침표로 끝나는 문장 비율
-    """
     if not body:
         return 0.0
 
@@ -125,10 +118,6 @@ async def _summarize(body: str) -> Optional[str]:
 
 
 async def run(url: str) -> Optional[SummaryResult]:
-    """
-    기사 URL → 본문 추출 → 요약 → 품질 점수 반환
-    품질 점수 0.3 미만이면 None 반환
-    """
     try:
         async with httpx.AsyncClient(
             timeout=15,
@@ -157,9 +146,6 @@ async def run(url: str) -> Optional[SummaryResult]:
 
 
 async def run_and_save(url: str) -> Optional[SummaryResult]:
-    """
-    요약 결과를 news_cache 테이블에 업데이트
-    """
     result = await run(url)
     if not result:
         return None

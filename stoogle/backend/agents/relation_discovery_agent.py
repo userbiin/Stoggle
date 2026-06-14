@@ -1,19 +1,4 @@
-"""
-기업 관계 발굴 에이전트
-
-가격 상관계수(동조화) 대신 뉴스·DART 공시에서 실제 비즈니스 관계를 발굴한다.
-납품업체·공급사·유통사·계열사·고객사·협력사 관계를 Claude structured output으로 추출하고
-RelationCache에 source='news'|'dart' 로 upsert한다.
-
-흐름:
-  1. 기준 종목의 최신 뉴스 제목+요약 수집
-  2. DartChunk 테이블에서 거래처·공급망 관련 섹션 추출
-  3. Claude tool_use 1회 호출로 실제 비즈니스 관계 구조화
-  4. 기업명 → 종목코드 매핑 (레지스트리 역방향 조회 + 부분 매칭)
-  5. RelationCache upsert (발굴된 관계는 correlation 기반보다 항상 우선)
-
-반환: 저장된 관계 수 (int)
-"""
+# 관계 발굴 에이전트
 from __future__ import annotations
 
 import logging
@@ -99,8 +84,8 @@ _DART_PARTNER_KEYWORDS = [
 ]
 
 
+# DART 텍스트 추출
 def _get_dart_text(ticker: str, max_chunks: int = 10) -> str:
-    """DART 공시에서 거래처·공급망 관련 섹션 추출. pgvector 미사용 시 빈 문자열."""
     try:
         from models.db_models import DartChunk, SessionLocal, PGVECTOR_AVAILABLE
 
@@ -151,7 +136,6 @@ def _normalize(name: str) -> str:
 
 
 def _build_reverse_registry(registry: dict) -> dict[str, str]:
-    """registry {ticker: {name: ...}} → {name_variant: ticker}"""
     rev: dict[str, str] = {}
     for ticker, info in registry.items():
         raw = info.get("name", "")
@@ -220,7 +204,6 @@ def _to_edge_type(raw_type: str) -> str:
 
 
 def _save_relations(ticker: str, resolved: list[dict]) -> int:
-    """RelationCache + company_edges upsert. 발굴 관계(news/dart)는 correlation 기반보다 항상 우선."""
     if not resolved:
         return 0
     try:
@@ -350,13 +333,6 @@ async def _call_claude(client, model: str, user_prompt: str, ticker: str = "?") 
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def discover_relations(ticker: str) -> int:
-    """
-    뉴스 + DART 공시에서 실제 비즈니스 관계를 발굴하여 RelationCache에 저장.
-
-    Returns
-    -------
-    int: 저장된 관계 수 (0 = 발굴 없음 또는 API 키 미설정)
-    """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         logger.warning("ANTHROPIC_API_KEY 미설정 — 관계 발굴 건너뜀")
@@ -432,10 +408,6 @@ async def discover_relations(ticker: str) -> int:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _load_news_cache_all(ticker: str, limit: int = 200) -> list[tuple[str, str]]:
-    """
-    NewsCache 테이블에서 해당 종목의 과거 뉴스 전체를 로드한다.
-    반환: [(title, summary), ...]  최신순 정렬
-    """
     try:
         from models.db_models import NewsCache, SessionLocal
 
@@ -459,7 +431,6 @@ def _load_news_cache_all(ticker: str, limit: int = 200) -> list[tuple[str, str]]
 def _chunk_articles(
     articles: list[tuple[str, str]], chunk_size: int = 25
 ) -> list[list[tuple[str, str]]]:
-    """기사 목록을 chunk_size 단위 배치로 분할한다."""
     return [articles[i : i + chunk_size] for i in range(0, len(articles), chunk_size)]
 
 
@@ -477,10 +448,6 @@ async def _merge_results(
     ticker: str,
     reverse_registry: dict,
 ) -> list[dict]:
-    """
-    여러 배치의 LLM 결과를 합산·중복 제거한다.
-    같은 related_ticker + relation_type 쌍은 confidence 최대값을 유지한다.
-    """
     best: dict[tuple, dict] = {}
 
     for result in batches:
@@ -507,18 +474,6 @@ async def _merge_results(
 
 
 async def discover_relations_retroactive(ticker: str, max_articles: int = 150) -> int:
-    """
-    NewsCache에 저장된 과거 뉴스 전체 + 멀티페이지 크롤링 결과를 소급 탐색하여
-    company_edges 및 RelationCache를 채운다.
-
-    - 과거 뉴스를 25건씩 배치로 나눠 LLM 호출 → 결과 합산
-    - 이미 발굴된 관계보다 confidence가 높은 경우에만 갱신
-    - `discover_relations` 와 달리 단발성 씨딩용으로 설계됨
-
-    Returns
-    -------
-    int: 저장/갱신된 관계 수
-    """
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         logger.warning("ANTHROPIC_API_KEY 미설정 — 소급 발굴 건너뜀")
@@ -587,7 +542,6 @@ async def discover_relations_retroactive(ticker: str, max_articles: int = 150) -
 
 
 async def _fetch_article_body(client, sem, url: str) -> str:
-    """기사 URL에서 본문을 fetch하여 반환. 실패 시 빈 문자열."""
     import asyncio
     import trafilatura
     async with sem:
@@ -603,11 +557,6 @@ async def _fetch_article_body(client, sem, url: str) -> str:
 async def _get_news_text_multipage(
     ticker: str, pages: int = 5, fetch_bodies: bool = True, body_limit: int = 30
 ) -> list[tuple[str, str]]:
-    """
-    네이버 금융에서 여러 페이지 뉴스를 수집한다.
-    fetch_bodies=True 시 기사 본문까지 비동기 fetch → LLM 컨텍스트 대폭 향상.
-    body_limit: 본문 fetch할 기사 수 상한 (비용/시간 제한)
-    """
     import asyncio
     import httpx
 

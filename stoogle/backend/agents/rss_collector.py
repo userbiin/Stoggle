@@ -1,9 +1,4 @@
-"""
-주요 한국 언론사 RSS 피드 수집기
-
-feedparser로 RSS/Atom 피드를 파싱하고 최근 window_minutes 이내 기사를 반환한다.
-개별 피드 실패는 경고 로그만 남기고 건너뜀 — 전체 수집에 영향 없음.
-"""
+# RSS 수집기
 from __future__ import annotations
 
 import logging
@@ -123,17 +118,6 @@ def _parse_pub_dt(entry) -> Optional[datetime]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def collect(window_minutes: int = _DEFAULT_WINDOW_MINUTES) -> list[RawArticle]:
-    """
-    등록된 RSS 피드를 병렬로 수집하여 최근 window_minutes 이내 기사를 반환한다.
-
-    Parameters
-    ----------
-    window_minutes : 수집 대상 기사의 최대 경과 시간(분). 기본 70분.
-
-    Returns
-    -------
-    list[RawArticle] — 중복 URL 제거된 기사 목록
-    """
     try:
         import feedparser
     except ImportError:
@@ -143,7 +127,6 @@ def collect(window_minutes: int = _DEFAULT_WINDOW_MINUTES) -> list[RawArticle]:
     cutoff = datetime.now(tz=timezone.utc) - timedelta(minutes=window_minutes)
 
     def _fetch_one(source: str, feed_url: str) -> tuple[list[RawArticle], bool]:
-        """단일 RSS 피드 수집. (articles, success) 반환."""
         feed_articles: list[RawArticle] = []
         try:
             resp = _requests.get(feed_url, headers=_FETCH_HEADERS, timeout=10)

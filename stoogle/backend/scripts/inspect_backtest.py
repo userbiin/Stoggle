@@ -1,18 +1,4 @@
-"""
-백테스트 결과 조회/분석 스크립트
-
-[프로젝트 평가 기준]
-  핵심 질문: "뉴스가 뜬 종목이 실제로 유의미하게 변동했는가?"
-  주지표: Magnitude Hit Rate — |actual_change| >= MAGNITUDE_THRESHOLD
-  
-  direction_accuracy(상승/하락 방향 일치)는 본 프로젝트의 목표가 아니므로 제거.
-
-실행 예시:
-    cd backend/
-    python scripts/inspect_backtest.py --model_version backtest_v2
-    python scripts/inspect_backtest.py --model_version backtest_v2 --breakdown confidence
-    python scripts/inspect_backtest.py --model_version backtest_v2 --detail
-"""
+# 백테스트 조회
 from __future__ import annotations
 
 import argparse
@@ -166,7 +152,6 @@ def show_by_confidence(model_version: str) -> None:
 
 
 def show_detail(model_version: str) -> None:
-    """개별 레코드 상세 출력."""
     from models.db_models import PredictionLog, SessionLocal
     from evaluation.prediction_scorer import MAGNITUDE_THRESHOLD
 

@@ -1,9 +1,4 @@
-"""
-프로젝트 공통 상수.
-
-tasks.py / relation_service.py / stock_service.py 모두 이 파일에서 import한다.
-외부 서비스(pykrx 제외)에 의존하지 않아 순환 import 위험이 없다.
-"""
+# 공통 상수
 import logging
 from datetime import datetime
 
@@ -20,11 +15,6 @@ _KOSPI200_FALLBACK: list[str] = [
 
 
 def _load_kospi200() -> list[str]:
-    """
-    pykrx에서 KOSPI 200 실시간 구성 종목을 조회한다.
-    조회 실패 시 fallback 목록을 반환한다.
-    stock_service를 import하지 않아 순환 의존성이 없다.
-    """
     try:
         from pykrx import stock as pykrx_stock
 

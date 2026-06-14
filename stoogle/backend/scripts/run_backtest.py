@@ -1,19 +1,4 @@
-"""
-백테스트 메인 실행 스크립트
-
-흐름:
-  1. (ticker, as_of) 데이터셋 빌드
-     --from_db: NewsCache에 실제 존재하는 (ticker, date) 페어에서만 추출 (no_news skip 최소화)
-     기본: KOSPI50 fallback × 거래일 무작위
-  2. 각 샘플에 대해 run_analysis_at() — 5개 소스 시점 격리 예측 생성
-  3. 즉시 채점 — D+3가 이미 지난 과거 데이터이므로 force_score_all=True로 전부 채점
-  4. /api/v1/_internal/prediction-metrics?model_version=backtest_v1 로 확인
-
-실행 예시:
-    cd backend/
-    python scripts/run_backtest.py --from_db --start 20260520 --end 20260605 --safety_days 3 --n_samples 50
-    python scripts/run_backtest.py --n_samples 30 --start 20260522 --end 20260530
-"""
+# 백테스트 실행
 from __future__ import annotations
 
 import argparse

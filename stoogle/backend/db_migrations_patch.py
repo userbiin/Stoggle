@@ -1,14 +1,4 @@
-"""
-db_migrations_patch.py
-PredictionLog 테이블에 direction_correct 컬럼 추가 마이그레이션
-
-기존 run_migrations()에 추가할 내용을 독립 스크립트로 제공.
-db_models.py의 run_migrations()에 직접 통합하거나 이 스크립트를 별도 실행해도 됨.
-
-실행:
-    cd backend/
-    python db_migrations_patch.py
-"""
+# DB 마이그레이션
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

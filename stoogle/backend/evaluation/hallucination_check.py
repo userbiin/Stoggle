@@ -1,10 +1,4 @@
-"""[2-A] 코드 기반 grounding 검증 — 가짜 종목 / 근거 없는 추론 탐지
-
-KRX 상장 종목 집합이라는 정답이 있으므로 LLM 없이 100% 자동 검증 가능하다.
-완전 일치 방식의 한계(LLM이 근거 문장을 살짝 다듬으면 false positive):
-  개선안 — evidence를 임베딩해 원문 청크와 cosine similarity > 0.8이면 "근거 있음"
-  (pgvector 활용, 현재는 완전 일치로 구현)
-"""
+# 할루시네이션 검증
 import logging
 from datetime import datetime
 from typing import Union
@@ -17,19 +11,6 @@ def check_grounding(
     valid_tickers: set,
     source_articles: list,
 ) -> dict:
-    """
-    통합 에이전트 출력의 할루시네이션을 코드로 검증.
-
-    Parameters
-    ----------
-    result         : AnalysisResult.impacts 포함 dict
-    valid_tickers  : KRX 상장 종목코드 집합 (기준값)
-    source_articles: Article 객체 또는 {"content": str} dict 목록
-
-    Returns
-    -------
-    {checked, invalid_ticker, missing_evidence, hallucination_rate}
-    """
     impacts = result.get("impacts", [])
     total = len(impacts)
     if total == 0:
@@ -65,7 +46,6 @@ def check_grounding(
 
 
 def log_hallucination(agent: str, module: str, stats: dict) -> None:
-    """할루시네이션 검증 결과를 hallucination_logs 테이블에 저장한다."""
     try:
         from models.db_models import HallucinationLog, SessionLocal
 

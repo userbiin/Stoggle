@@ -1,17 +1,4 @@
-"""
-Look-ahead 누출 검증 스크립트
-
-백테스트 정확도가 70%+ 비현실적으로 높으면 누출 의심. 이 스크립트로 확인한다.
-
-검증 항목:
-  1. 뉴스 누출: 기사 fetched_at >= predicted_at (미래 기사 사용 여부)
-  2. latest_source_pubdate 누출: 가장 최신 기사 발행일이 predicted_at 이후인지
-  3. base_price_date 누출: base_close 기준일이 predicted_at 이후인지
-
-실행:
-    cd backend/
-    python -m evaluation.verify_lookahead --model_version backtest_v1
-"""
+# 누출 검증
 from __future__ import annotations
 
 import argparse
@@ -23,13 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 def verify(model_version: str = "backtest_v1") -> list[dict]:
-    """
-    지정 model_version의 PredictionLog를 검사하여 누출 목록을 반환한다.
-
-    Returns
-    -------
-    list of {"pred_id", "type", "pred_at", "leak_dt", "detail"}
-    """
     from models.db_models import PredictionLog, NewsCache, SessionLocal
 
     db = SessionLocal()
@@ -105,7 +85,6 @@ def verify(model_version: str = "backtest_v1") -> list[dict]:
 
 
 def report(model_version: str = "backtest_v1") -> None:
-    """누출 검증 결과를 터미널에 출력한다."""
     from models.db_models import PredictionLog, SessionLocal
     db = SessionLocal()
     try:

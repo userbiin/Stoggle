@@ -1,13 +1,4 @@
-"""[3] 예측 정확도 채점
-
-[프로젝트 평가 기준]
-  핵심 질문: "뉴스가 뜬 종목이 실제로 유의미하게 변동했는가?"
-  주지표: Magnitude Hit  — |actual_change| >= MAGNITUDE_THRESHOLD
-  부지표: Direction      — up/down 방향 일치 (참고용)
-
-is_correct = magnitude_hit (주지표)
-abnormal_return = 1.0(hit) / 0.0(miss) — 집계용
-"""
+# 예측 채점
 import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -93,13 +84,6 @@ def score_pending_predictions(
     model_version: Optional[str] = None,
     force_score_all: bool = False,
 ) -> dict:
-    """
-    D+3가 경과한 pending 예측을 실제 주가와 대조해 채점.
-
-    주지표: is_correct = magnitude_hit (|actual_change| >= MAGNITUDE_THRESHOLD)
-    부지표: abnormal_return = 1.0(hit) / 0.0(miss)  — 동일값, 집계용
-    참고:   actual_direction 컬럼에 실제 방향(up/down) 저장
-    """
     try:
         from models.db_models import PredictionLog
 
@@ -146,7 +130,6 @@ def score_pending_predictions(
 
 
 def score_all_pending(db, model_version: Optional[str] = None) -> dict:
-    """백테스트 전용: D+3 체크 없이 전체 pending 즉시 채점."""
     return score_pending_predictions(db, model_version=model_version, force_score_all=True)
 
 
@@ -155,10 +138,6 @@ def score_all_pending(db, model_version: Optional[str] = None) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def prediction_metrics(db, model_version: Optional[str] = None) -> dict:
-    """
-    주지표: magnitude_hit_rate  — |Δ| >= MAGNITUDE_THRESHOLD
-    calibration: high-confidence 예측의 hit_rate가 전체보다 높은지
-    """
     try:
         from models.db_models import PredictionLog
 

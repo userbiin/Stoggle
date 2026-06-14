@@ -1,10 +1,4 @@
-"""[1] 에이전트별 LLM 호출 추적 — 호출량 / 지연 / 비용
-
-track_agent(agent_name, module) 데코레이터로 에이전트 함수를 감싸면
-호출량·토큰·지연·실패를 모듈/에이전트 단위로 in-memory 집계한다.
-
-비용 단가(IN_PRICE / OUT_PRICE)는 30일마다 Claude 공식 가격 기준으로 갱신할 것.
-"""
+# 호출 추적
 import asyncio
 import json
 import logging
@@ -18,7 +12,6 @@ _stats: dict[str, dict] = {}
 
 
 def track_agent(agent_name: str, module: str):
-    """에이전트 LLM 호출의 호출량·토큰·지연·실패를 모듈/에이전트 단위로 집계."""
 
     def decorator(func):
         key = f"{module}.{agent_name}"

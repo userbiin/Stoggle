@@ -1,10 +1,4 @@
-"""
-LangChain 기반 뉴스 에이전트
-
-두 가지 기능:
-  1. run_news_analysis()   — 종목 뉴스 요약 (기존)
-  2. run_impact_analysis() — 뉴스 기반 관계사 주가 영향 판단 (신규)
-"""
+# 뉴스 에이전트
 import json
 import os
 from typing import Optional
@@ -35,9 +29,9 @@ import asyncio
 # LangChain 도구 정의
 # ─────────────────────────────────────────────────────────────────────────────
 
+# 종목 뉴스 조회 툴
 @tool
 def fetch_stock_news(ticker: str) -> str:
-    """주식 종목 코드를 받아 최신 뉴스를 가져옵니다."""
     # asyncio.run()은 이미 실행 중인 이벤트 루프에서 호출 불가.
     # nest_asyncio 또는 새 루프를 생성해 안전하게 실행한다.
     import nest_asyncio
@@ -51,9 +45,9 @@ def fetch_stock_news(ticker: str) -> str:
     )
 
 
+# 감성 분석 툴
 @tool
 def analyze_sentiment(text: str) -> str:
-    """뉴스 텍스트의 투자 관점 감성을 분석합니다."""
     positive_words = ["상승", "급등", "호실적", "흑자", "확정", "수혜"]
     negative_words = ["하락", "급락", "부진", "적자", "우려", "제재"]
 
@@ -71,11 +65,8 @@ def analyze_sentiment(text: str) -> str:
 # 뉴스 요약 에이전트 (기존)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# 에이전트 생성
 def build_news_agent() -> Optional[object]:
-    """
-    LangChain 뉴스 에이전트 생성.
-    CLAUDE_API_KEY 미설정 시 None 반환.
-    """
     if not LANGCHAIN_AVAILABLE or not os.getenv("ANTHROPIC_API_KEY"):
         return None
 
@@ -102,7 +93,6 @@ def build_news_agent() -> Optional[object]:
 
 
 async def run_news_analysis(ticker: str, company_name: str) -> Optional[str]:
-    """에이전트를 실행하여 종목 뉴스 분석 결과 반환"""
     agent = build_news_agent()
     if agent is None:
         return None
@@ -160,22 +150,6 @@ async def run_impact_analysis(
     news_titles: list[str],
     related_companies: list[dict],
 ) -> list[dict]:
-    """
-    뉴스 헤드라인을 LLM에게 읽히고, 관계사 중 영향받을 종목과 방향을 반환한다.
-
-    Parameters
-    ----------
-    ticker          : 기준 종목코드
-    company_name    : 기준 기업명
-    news_titles     : 최신 뉴스 헤드라인 리스트 (최대 10개 사용)
-    related_companies : compute_relations()에서 반환된 관계사 목록
-                        [{"ticker": ..., "name": ..., "correlation": ..., "reason": ...}, ...]
-
-    Returns
-    -------
-    [{"ticker": ..., "name": ..., "impact": "positive|negative", "reason": ...}, ...]
-    빈 리스트를 반환해도 안전하다 (fallback).
-    """
     if not ANTHROPIC_AVAILABLE or not os.getenv("ANTHROPIC_API_KEY"):
         return []
 

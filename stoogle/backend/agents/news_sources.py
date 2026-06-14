@@ -1,22 +1,4 @@
-"""
-news_sources.py
-─────────────────────────────────────────────────────────────
-수집 레이어: RSS + 네이버 섹션 크롤링 + 2단계 통합 중복제거
-
-기존 news_collector.py의 collect_candidates()를 이 모듈의 것으로 교체한다.
-이후 파이프라인(프리필터 → 본문 fetch → EXAONE 채점)은 그대로.
-
-설계:
-    [A] RSS 수집기      ── 가볍고 빠름. 최근 1시간 기사만. (주 소스)
-    [B] 섹션 크롤링기   ── RSS가 놓친 기사 보강. (보조 소스, DOM 의존 → 깨지기 쉬움)
-    [C] 통합 중복제거    ── 2단계:
-          1) oid+aid / 정규화 URL 키 매칭  (정확)
-          2) 제목 유사도 fallback          (교차 소스 중복 잡기)
-
-⚠️ 중요: RSS는 언론사 원본 도메인 URL, 섹션은 네이버 도메인 URL로 들어온다.
-   같은 기사라도 URL이 완전히 다르므로 URL 키만으로는 교차 중복을 못 잡는다.
-   → 제목 유사도 fallback이 반드시 필요.
-"""
+# 뉴스 수집
 
 import re
 import html
@@ -83,10 +65,6 @@ def _jaccard(a: frozenset, b: frozenset) -> float:
 # [C-1] 정확 중복제거용 키 추출
 # ─────────────────────────────────────────────────────────────
 def canonical_key(url: str) -> str | None:
-    """
-    네이버 기사면 oid+aid 조합을 키로 (가장 정확).
-    그 외(언론사 원본 URL)는 host+path 정규화로 키 생성.
-    """
     if not url:
         return None
     # https://n.news.naver.com/article/023/0001234567 or .../mnews/article/...
@@ -108,7 +86,6 @@ def canonical_key(url: str) -> str | None:
 # [A] RSS 수집기
 # ─────────────────────────────────────────────────────────────
 async def fetch_rss(name: str, url: str) -> list[dict]:
-    """feedparser는 동기 라이브러리 → to_thread로 이벤트 루프 안 막게."""
     try:
         feed = await asyncio.to_thread(feedparser.parse, url)
     except Exception as e:

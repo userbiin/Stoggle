@@ -1,18 +1,4 @@
-"""
-종목 관련도 판별 에이전트
-
-3단 파이프라인:
-  1단계 — Ollama 배치 필터 (공통 1회): 경제/기업 무관 기사 제거
-  2단계 — 기사별 종목 매핑 (기사당 1회): 직·간접 관련 종목 추출
-  3단계 — Ollama 개별 점수 (종목×기사): 4점 이상만 저장
-
-흐름:
-  batch_filter(articles)              →  filtered: list[Article]       (공통, 1회)
-  map_articles_to_tickers(filtered)   →  { ticker: [Article, ...] }    (기사당 1회)
-  run(ticker, mapped_articles)        →  list[ScoredArticle]            (종목별)
-
-4점 미만은 폐기, 4점 이상만 반환.
-"""
+# 관련도 에이전트
 from __future__ import annotations
 
 import asyncio
@@ -80,7 +66,6 @@ class ScoredArticle:
 # ---------------------------------------------------------------------------
 
 def _get_company_info(ticker: str) -> tuple[str, str]:
-    """종목코드 → (회사명, 섹터). DB → pykrx → 캐시 순으로 조회."""
     if ticker in _TICKER_INFO:
         return _TICKER_INFO[ticker]
 
@@ -112,16 +97,10 @@ def _get_company_info(ticker: str) -> tuple[str, str]:
 
 
 def _normalize_name(s: str) -> str:
-    """종목명 정규화: 공백 제거 + 소문자 (예: 'SK 하이닉스' → 'sk하이닉스')."""
     return s.replace(" ", "").lower()
 
 
 def _build_name_to_ticker_map() -> dict[str, str]:
-    """
-    { 정규화된_회사명: ticker } 매핑 구축 (1회 캐시).
-    1순위 DB → 2순위 Redis fallback. _KO_ALIAS 역방향 포함.
-    키는 _normalize_name() 적용 — 조회 시에도 동일하게 정규화 필요.
-    """
     global _NAME_TO_TICKER
     if _NAME_TO_TICKER:
         return _NAME_TO_TICKER
@@ -174,13 +153,6 @@ def _build_name_to_ticker_map() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 async def _batch_filter_once(articles: list[Article]) -> Optional[list[int]]:
-    """
-    articles 목록에서 경제/기업/주식시장 관련 기사 인덱스(1-based) 반환.
-
-    반환값:
-      list[int] — 파싱 성공 (빈 배열 포함: 경제 기사가 진짜 없는 경우)
-      None      — 파싱 실패 또는 API 에러 → 호출자가 폴백 처리
-    """
     titles = "\n".join(f"{i+1}. {a.title}" for i, a in enumerate(articles))
     prompt = (
         "당신은 주식 뉴스 필터입니다.\n"
@@ -213,11 +185,6 @@ async def _batch_filter_once(articles: list[Article]) -> Optional[list[int]]:
 
 
 async def batch_filter(articles: list[Article]) -> list[Article]:
-    """
-    전체 기사에서 경제/기업 관련 기사만 추출 (공통 1회 실행).
-    800건 초과 시 자동 분할. Ollama 실패(None) 시 원본 전체 반환 (폴백).
-    정상 빈 배열([]) 시 빈 리스트 반환 — 경제 기사가 진짜 없는 경우.
-    """
     if not articles:
         return []
 
@@ -252,10 +219,6 @@ async def batch_filter(articles: list[Article]) -> list[Article]:
 # ---------------------------------------------------------------------------
 
 async def _map_article_once(article: Article, name_map: dict[str, str]) -> list[str]:
-    """
-    기사 제목/요약 → 직·간접 관련 KOSPI200 ticker 리스트.
-    파싱 실패 또는 Ollama 오류 시 빈 리스트 반환.
-    """
     prompt = (
         "당신은 주식 뉴스 분석가입니다.\n\n"
         "아래 기사가 직접 또는 간접적으로 영향을 미치는\n"
@@ -309,12 +272,6 @@ async def _map_with_semaphore(
 
 
 async def map_articles_to_tickers(articles: list[Article]) -> dict[str, list[Article]]:
-    """
-    기사 목록 → { ticker: [Article, ...] } 매핑.
-
-    각 기사에 대해 Ollama로 직·간접 관련 종목을 추출한다.
-    병렬 5 (asyncio.Semaphore). name→ticker 변환은 DB companies 테이블 조회.
-    """
     if not articles:
         return {}
 
@@ -362,7 +319,6 @@ _SCORE_FEWSHOT = [
 
 
 def _parse_score_json(raw: str) -> tuple[int, str, str]:
-    """JSON 응답 파싱 → (score, direction, reason). 실패 시 (0, '중립', '')."""
     raw = raw.strip().replace("```json", "").replace("```", "")
     m = re.search(r"\{.*\}", raw, re.DOTALL)
     if not m:
@@ -383,7 +339,6 @@ async def _score_with_ollama(
     company_name: str,
     article: Article,
 ) -> tuple[int, str, str]:
-    """Ollama로 기사 관련도 평가 → (score 0~5, direction, reason). 실패 시 (0, '중립', '')."""
     user_msg = (
         f"종목: {company_name}\n"
         f"뉴스 제목: {article.title}\n"
@@ -430,12 +385,6 @@ async def run(
     ticker: str,
     articles: list[Article],
 ) -> list[ScoredArticle]:
-    """
-    기사 목록을 Ollama로 0~5점 평가하여 4점 이상만 점수 내림차순으로 반환.
-
-    crawl_all_news: 종목별 Naver Finance 기사를 직접 전달
-    crawl_category_news: map_articles_to_tickers() 결과를 전달
-    """
     if not articles:
         return []
 

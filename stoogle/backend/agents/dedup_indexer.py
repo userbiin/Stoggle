@@ -1,13 +1,4 @@
-"""
-기사 중복 제거 + pgvector 색인
-
-입력 : List[Article]
-출력 : 중복 제거된 List[Article] (pgvector 색인 완료)
-
-중복 판단 기준
-  1. URL 동일 → 즉시 중복
-  2. 제목+요약 임베딩 코사인 유사도 >= 0.9 → 의미적 중복
-"""
+# 기사 중복제거
 from __future__ import annotations
 
 import logging
@@ -39,7 +30,6 @@ class Article:
 
 # 임베딩
 async def _embed_batch(texts: list[str]) -> list[list[float]]:
-    """Voyage AI voyage-3 배치 호출. VOYAGE_API_KEY 미설정 시 빈 리스트 반환."""
     api_key = os.getenv("VOYAGE_API_KEY")
     if not api_key:
         return []
@@ -87,7 +77,6 @@ def _dedup_within_batch(
 
 # 2단계: DB(pgvector) 비교
 def _is_db_duplicate(emb: list[float], url: str, db, NewsVector) -> bool:
-    """URL 일치 또는 벡터 거리 0.1 이하(유사도 0.9+)이면 중복"""
     if db.query(NewsVector.id).filter(NewsVector.url == url).scalar():
         return True
 
@@ -101,12 +90,6 @@ def _is_db_duplicate(emb: list[float], url: str, db, NewsVector) -> bool:
 
 # 퍼블릭 API
 async def run(articles: list[Article]) -> list[Article]:
-    """
-    중복 제거 후 pgvector에 색인한 기사 목록을 반환.
-
-    - 임베딩 실패 시: 원본 목록 반환 (에러 로깅)
-    - pgvector 미지원 또는 DB 오류 시: 배치 내 중복 제거 결과 반환
-    """
     if not articles:
         return []
 

@@ -1,13 +1,4 @@
-"""
-backtest_rescore.py
-기존 채점 결과를 direction_correct 기준으로 재채점하고
-예측 분포 편향을 진단한다.
-
-실행:
-    cd backend/
-    python backtest_rescore.py --model_version pilot_v1
-    python backtest_rescore.py --model_version pilot_v1 --diagnose
-"""
+# 백테스트 재채점
 from __future__ import annotations
 
 import argparse
@@ -19,11 +10,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+# 재채점
 def rescore(model_version: str) -> None:
-    """
-    이미 scored된 레코드를 direction_correct 기준으로 재채점한다.
-    is_correct를 (direction == actual_direction)으로 덮어쓴다.
-    """
     from datetime import datetime
     from models.db_models import PredictionLog, SessionLocal
     from evaluation.prediction_scorer import MAGNITUDE_THRESHOLD
@@ -65,11 +53,8 @@ def rescore(model_version: str) -> None:
         db.close()
 
 
+# 편향 진단
 def diagnose(model_version: str) -> None:
-    """
-    예측 분포 편향 진단.
-    모델이 특정 방향(up/down)을 과도하게 예측하는지 확인한다.
-    """
     from models.db_models import PredictionLog, SessionLocal
 
     db = SessionLocal()

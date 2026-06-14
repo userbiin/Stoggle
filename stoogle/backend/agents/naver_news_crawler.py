@@ -1,14 +1,4 @@
-"""
-naver_news_crawler.py
-─────────────────────────────────────────────────────────────
-수집(news_sources) → 본문 fetch(httpx) → 종목 매칭(직접+섹터) → EXAONE/Ollama 채점
-
-수정:
-  - 본문 fetch를 httpx 비동기로 직접 처리 (trafilatura.fetch_url의 urllib3 풀 충돌 제거)
-    → 'Connection pool is full' 경고 사라지고 본문이 실제로 채워짐
-  - 섹터 매핑(SECTOR_TICKERS) 포함 → 종목명 없는 거시 뉴스도 후보 종목에 연결
-  - 본문 성공 건수 디버그 출력
-"""
+# 뉴스 크롤러
 
 import os
 import re

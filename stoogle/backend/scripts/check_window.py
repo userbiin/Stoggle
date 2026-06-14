@@ -1,13 +1,4 @@
-"""
-백테스트 뉴스 윈도우 점검 스크립트
-
-지정 날짜 범위에서 published_at 기준 뉴스 분포를 보여준다.
-run_backtest.py 전 데이터 가용성 확인용.
-
-실행 예시:
-    cd backend/
-    python scripts/check_window.py --start 20260528 --end 20260602
-"""
+# 윈도우 점검
 from __future__ import annotations
 
 import argparse

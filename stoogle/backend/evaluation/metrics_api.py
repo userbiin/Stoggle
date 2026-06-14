@@ -1,8 +1,4 @@
-"""집계 조회 엔드포인트 — /api/v1/_internal/*
-
-⚠️ 비용 단가(IN_PRICE / OUT_PRICE)는 Claude 공식 가격 기준으로 30일마다 갱신할 것.
-   오래된 단가표는 비용을 20~40% 틀리게 계산한다.
-"""
+# 지표 API
 from typing import Optional
 
 from fastapi import APIRouter, Query
@@ -19,7 +15,6 @@ OUT_PRICE = 15.0
 
 @router.get("/agent-stats")
 async def agent_stats():
-    """에이전트별 호출량·토큰·지연·추정 비용 조회."""
     stats = get_agent_stats()
     result = {}
     for key, s in stats.items():
@@ -38,7 +33,6 @@ async def pred_metrics(
         description="필터할 model_version. 미지정 시 전체 집계. 예: backtest_v1",
     )
 ):
-    """Direction Accuracy + High-confidence Accuracy 집계. model_version으로 백테스트/라이브 분리."""
     from models.db_models import SessionLocal
     from evaluation.prediction_scorer import prediction_metrics
 
@@ -53,7 +47,6 @@ async def pred_metrics(
 
 @router.get("/hallucination-summary")
 async def hallu_summary():
-    """에이전트별 할루시네이션율 + 요약 충실도 집계."""
     from models.db_models import HallucinationLog, SessionLocal
 
     db = SessionLocal()

@@ -1,16 +1,4 @@
-"""
-비즈니스 관계 소급 발굴 스크립트 (Celery 없이 직접 실행)
-
-사용법:
-  # KOSPI200 전체 소급
-  python seed_relations.py
-
-  # 특정 종목만
-  python seed_relations.py 005930 000660 066570
-
-  # 최대 기사 수 조정 (기본 150)
-  python seed_relations.py --max-articles 200 005930
-"""
+# 관계 발굴
 import asyncio
 import logging
 import sys

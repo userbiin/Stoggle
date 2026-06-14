@@ -1,14 +1,4 @@
-"""
-네이버 뉴스 섹션 크롤러
-
-섹션(정치/경제/사회/세계)별 최신 기사를 수집한다.
-
-전략:
-  1차: 네이버 뉴스 내부 JSON API 호출 (Network 탭에서 확인한 엔드포인트)
-  2차: 정적 HTML 파싱 (BeautifulSoup fallback)
-
-요청 간 delay_seconds 딜레이로 서버 부하를 줄인다.
-"""
+# 섹션 크롤러
 from __future__ import annotations
 
 import logging
@@ -54,8 +44,8 @@ _SECTION_JSON_URLS: list[str] = [
 _OID_AID_RE = re.compile(r"oid=(\d+)[&;].*?aid=(\d+)|/article/(\d+)/(\d+)")
 
 
+# URL 정규화
 def _canonical_naver_url(url: str) -> Optional[str]:
-    """네이버 기사 URL에서 oid+aid를 추출해 정규 URL을 반환한다."""
     m = _OID_AID_RE.search(url)
     if not m:
         return None
@@ -73,7 +63,6 @@ def _now_iso() -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _try_json_api(sid: str, category: str) -> list[RawArticle]:
-    """네이버 뉴스 내부 JSON API 시도. 실패하면 빈 리스트 반환."""
     articles: list[RawArticle] = []
     for tpl in _SECTION_JSON_URLS:
         url = tpl.format(sid=sid)
@@ -139,7 +128,6 @@ _ARTICLE_SELECTORS = [
 
 
 def _extract_press(tag) -> str:
-    """기사 링크 태그 주변에서 언론사명을 추출한다."""
     for selector in [
         lambda t: t.find_parent("li") and t.find_parent("li").select_one(".press"),
         lambda t: t.find_parent("div") and t.find_parent("div").select_one(".press"),
@@ -157,7 +145,6 @@ def _extract_press(tag) -> str:
 
 
 def _crawl_section_html(sid: str, category: str) -> list[RawArticle]:
-    """BeautifulSoup으로 섹션 페이지 정적 HTML에서 기사를 추출한다."""
     section_url = _SECTIONS[sid][1]
     articles: list[RawArticle] = []
     seen: set[str] = set()
@@ -202,12 +189,6 @@ def _crawl_section_html(sid: str, category: str) -> list[RawArticle]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def collect(delay_seconds: float = 1.5) -> list[RawArticle]:
-    """
-    네이버 뉴스 섹션별 최신 기사를 수집한다.
-
-    각 섹션마다 JSON API → HTML 순으로 시도하며,
-    섹션 간 delay_seconds 딜레이를 준다.
-    """
     articles: list[RawArticle] = []
     seen_urls: set[str] = set()
 

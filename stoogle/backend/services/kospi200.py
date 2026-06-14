@@ -1,10 +1,4 @@
-"""
-KOSPI200 종목 목록 관리
-
-tasks.py(Celery)와 relation_service.py 모두 KOSPI200 목록이 필요하지만,
-relation_service가 tasks를 임포트하면 Celery 앱 초기화 + pykrx 호출이
-API 요청 경로에서 발생한다. 이 모듈을 중간 계층으로 분리하여 의존성을 끊는다.
-"""
+# KOSPI200 목록
 import logging
 from datetime import datetime
 
@@ -21,10 +15,6 @@ KOSPI200_FALLBACK: list[str] = [
 
 
 def load_kospi200() -> list[str]:
-    """
-    pykrx에서 KOSPI 200 실시간 구성 종목을 조회한다.
-    조회 실패 시 fallback 목록을 반환한다.
-    """
     try:
         from pykrx import stock as pykrx_stock
         from services.stock_service import _normalize_ticker_list

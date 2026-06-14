@@ -1,18 +1,4 @@
-"""
-백테스트용 뉴스 풀 적재 스크립트
-
-Naver Search API (공식)로 뉴스를 긁어 NewsCache 테이블에 저장한다.
-공식 API는 날짜 파라미터를 지원하지 않으므로 pubDate 클라이언트 필터로 기간을 제한한다.
-
-사전 조건:
-    .env에 NAVER_CLIENT_ID, NAVER_CLIENT_SECRET 설정 필요
-    일일 호출 한도: 무료 플랜 25,000회, 1회 최대 100건 → 25만 건/일
-
-실행 예시:
-    cd backend/
-    python scripts/seed_news_pool.py --days 14 --tickers 005930 000660 035420
-    python scripts/seed_news_pool.py --days 30  # KOSPI50 전체
-"""
+# 뉴스 풀 적재
 from __future__ import annotations
 
 import argparse
@@ -44,7 +30,6 @@ def _naver_headers() -> dict:
 
 
 def search_news(query: str, display: int = 100, start: int = 1, sort: str = "date") -> list[dict]:
-    """Naver Search API 호출. 실패 시 빈 리스트 반환."""
     try:
         resp = httpx.get(
             NAVER_SEARCH_URL,
@@ -60,7 +45,6 @@ def search_news(query: str, display: int = 100, start: int = 1, sort: str = "dat
 
 
 def seed_for_ticker(ticker: str, company_name: str, days: int, max_pages: int) -> int:
-    """한 종목의 뉴스를 긁어 NewsCache에 저장. 반환값: 저장 건수."""
     from email.utils import parsedate_to_datetime
     from models.db_models import NewsCache, SessionLocal
 
@@ -133,7 +117,6 @@ def seed_for_ticker(ticker: str, company_name: str, days: int, max_pages: int) -
 
 
 def get_kospi50_info() -> list[tuple[str, str]]:
-    """[(ticker, name), ...] 반환. pykrx 실패 시 fallback."""
     try:
         from pykrx import stock
         tickers = list(stock.get_index_portfolio_deposit_file("1028"))[:50]
